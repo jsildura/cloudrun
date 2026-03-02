@@ -3,6 +3,7 @@ __pycache__
 !gamdl
 !server
 !web
+!src
 !Wrapper
 !Dockerfile
 !cloudrun.yaml
