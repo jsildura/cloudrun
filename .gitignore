@@ -12,3 +12,10 @@ __pycache__
 !pyproject.toml
 !README.md
 !uv.lock
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
