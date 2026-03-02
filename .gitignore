@@ -16,4 +16,6 @@ __pycache__
 !.python-version
 !pyproject.toml
 !README.md
+!start.sh
+!.dockerignore
 !uv.lock

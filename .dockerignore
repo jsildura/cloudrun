@@ -1,0 +1,17 @@
+# Docker build context exclusions
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.github/
+*.egg-info/
+gamdl.egg-info/
+Apple Music/
+cookies.txt
+*.md
+*.bat
+.python-version
+uv.lock
+.gitignore
+.dockerignore

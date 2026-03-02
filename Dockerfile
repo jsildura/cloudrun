@@ -1,4 +1,5 @@
-# Dockerfile
+# Dockerfile — Hugging Face Spaces (Docker SDK)
+# Bundles: Python 3.12 + FFmpeg + mp4decrypt + Wrapper + Gamdl Backend
 
 FROM python:3.12-slim
 
@@ -20,29 +21,37 @@ RUN wget -qO /tmp/bento4.zip \
 # ── Install yt-dlp ───────────────────────────────────────────────────────────
 RUN pip install --no-cache-dir yt-dlp
 
-# ── Install Python application ───────────────────────────────────────────────
+# ── Set up application directory ─────────────────────────────────────────────
 WORKDIR /app
 
-# Install gamdl package
+# ── Copy and prepare Wrapper ─────────────────────────────────────────────────
+COPY Wrapper/ Wrapper/
+RUN chmod +x Wrapper/wrapper 2>/dev/null || true
+
+# ── Install gamdl package ────────────────────────────────────────────────────
 COPY pyproject.toml .
 COPY gamdl/ gamdl/
 RUN pip install --no-cache-dir .
 
-# Install server dependencies
+# ── Install server dependencies ──────────────────────────────────────────────
 COPY server/requirements.txt server/
 RUN pip install --no-cache-dir -r server/requirements.txt
 
-# Copy server code and web frontend
+# ── Copy server code and web frontend ────────────────────────────────────────
 COPY server/ server/
 COPY web/ web/
 
+# ── Copy startup script ──────────────────────────────────────────────────────
+COPY start.sh .
+RUN chmod +x start.sh
+
 # ── Runtime configuration ────────────────────────────────────────────────────
-ENV PORT=8080
+ENV PORT=7860
 ENV CLOUD_MODE=true
-EXPOSE 8080
+EXPOSE 7860
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/config')" || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/api/config')" || exit 1
 
-CMD ["uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+CMD ["bash", "start.sh"]
