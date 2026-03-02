@@ -1,0 +1,75 @@
+# cloudrun.yaml
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: gamdl-api
+  annotations:
+    run.googleapis.com/description: "Gamdl Apple Music downloader API"
+spec:
+  template:
+    metadata:
+      annotations:
+        # Scale to zero when idle → no cost
+        autoscaling.knative.dev/minScale: "0"
+        # Cap at 5 instances to control costs
+        autoscaling.knative.dev/maxScale: "5"
+        # Use gen2 execution environment for better perf
+        run.googleapis.com/execution-environment: gen2
+        # Allow up to 15 min for long album downloads
+        run.googleapis.com/cpu-throttling: "false"
+    spec:
+      # Max concurrent requests per instance
+      containerConcurrency: 10
+      # 15 minute timeout for long downloads
+      timeoutSeconds: 900
+      containers:
+        # 1. Main Gamdl API Container
+        - image: asia-southeast1-docker.pkg.dev/amdlxd-serverless/gamdl-repo/gamdl-api:latest
+          name: gamdl-api
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              memory: 2Gi
+              cpu: "2"
+          dependsOn:
+            - gamdl-wrapper
+          env:
+        # 2. Wrapper Sidecar Container
+        - image: asia-southeast1-docker.pkg.dev/amdlxd-serverless/gamdl-repo/gamdl-wrapper:latest
+          name: gamdl-wrapper
+          startupProbe:
+            tcpSocket:
+              port: 10020
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            limits:
+              memory: 512Mi
+              cpu: "1"
+            # ── Cloud mode flag ──
+            - name: CLOUD_MODE
+              value: "true"
+            # ── R2 configuration (from Secret Manager) ──
+            - name: R2_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: r2-config
+                  key: endpoint
+            - name: R2_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: r2-config
+                  key: access_key
+            - name: R2_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: r2-config
+                  key: secret_key
+            - name: R2_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: r2-config
+                  key: bucket
