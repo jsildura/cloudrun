@@ -7,6 +7,7 @@ __pycache__
 !Dockerfile
 !cloudrun.yaml
 !deploy.sh
+!wrangler.jsonc
 !.gitignore
 !.python-version
 !pyproject.toml
