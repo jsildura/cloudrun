@@ -1,0 +1,10 @@
+Wrapper/rootfs/system/lib64/*.so filter=lfs diff=lfs merge=lfs -text
+*.so filter=lfs diff=lfs merge=lfs -text
+/Wrapper/rootfs/system/lib64/libLLVM.so filter=lfs diff=lfs merge=lfs -text
+/Wrapper/rootfs/system/lib64/libicudata_sv_apple.so filter=lfs diff=lfs merge=lfs -text
+/Wrapper/rootfs/system/lib64/libmedialibrarycore.so filter=lfs diff=lfs merge=lfs -text
+**/httpcache.sqlitedb filter=lfs diff=lfs merge=lfs -text
+**/linker64 filter=lfs diff=lfs merge=lfs -text
+**/*.sqlitedb filter=lfs diff=lfs merge=lfs -text
+**/*.sqlitedb-wal filter=lfs diff=lfs merge=lfs -text
+**/main filter=lfs diff=lfs merge=lfs -text

@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="description" content="Amdlx — Apple Music Downloader Web Interface">
+    <meta name="theme-color" content="#1a1a1e">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <!-- API endpoint — set to Cloud Run URL in production -->
+    <!-- For local development, remove or leave empty to use same-origin -->
+    <meta name="api-url" content="">
+    <title>Amdlxd</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+    <!-- ── Toast container ─────────────────────────────────────────────── -->
+    <div id="toast-container"></div>
+
+    <!-- ── Main wrapper ────────────────────────────────────────────────── -->
+    <main class="app">
+        <!-- Header icons -->
+        <div class="header-icons">
+            <button class="icon-btn" id="btn-info" title="About" aria-label="About">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="16" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12.01" y2="8" />
+                </svg>
+            </button>
+            <button class="icon-btn" id="btn-settings" title="Settings" aria-label="Settings">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3" />
+                    <path
+                        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+            </button>
+        </div>
+
+        <!-- Auth status badge -->
+        <div class="auth-badge" id="auth-badge">
+            <span class="auth-dot"></span>
+            <span class="auth-text">Not connected</span>
+        </div>
+
+        <!-- Title -->
+        <h1 class="app-title">amdlxd</h1>
+        <p class="app-subtitle">
+            Download Apple Music <strong>songs</strong>, <strong>music videos</strong>, and <strong>post videos</strong>
+            in high quality with rich metadata and synced
+            lyrics.
+        </p>
+
+        <!-- URL input -->
+        <form class="url-form" id="url-form">
+            <div class="url-input-wrap">
+                <input type="url" class="url-input" id="url-input" placeholder="https://music.apple.com/..."
+                    autocomplete="off" autocorrect="off" spellcheck="false" required>
+                <button type="submit" class="btn-download" id="btn-submit">
+                    Download
+                </button>
+            </div>
+        </form>
+
+        <!-- Status container (shown during pre-processing, download, etc.) -->
+        <div class="status-container" id="status-container"></div>
+
+        <!-- Preview section (hidden by default) -->
+        <section class="preview-section" id="preview-section">
+            <div class="preview-card" id="preview-card">
+                <!-- Header: artwork + metadata + download button -->
+                <div class="preview-header">
+                    <img class="preview-artwork" id="preview-artwork" src="" alt="" crossorigin="anonymous">
+                    <div class="preview-meta">
+                        <h2 class="preview-title" id="preview-title"></h2>
+                        <span class="preview-artist" id="preview-artist"></span>
+                        <span class="preview-genre" id="preview-genre"></span>
+                        <div class="preview-badges">
+                            <span class="preview-badge">Preview</span>
+                            <span class="explicit-badge" id="preview-explicit" style="display:none">E</span>
+                        </div>
+                    </div>
+                    <button class="preview-download-btn" id="preview-download-btn" title="Download">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                    </button>
+                </div>
+                <!-- Track list -->
+                <div class="preview-tracks" id="preview-tracks"></div>
+                <!-- Footer: release date, count, duration, copyright -->
+                <div class="preview-footer" id="preview-footer"></div>
+            </div>
+        </section>
+
+        <!-- Download queue -->
+        <section class="queue-section" id="queue-section">
+            <h2 class="queue-title">Downloads</h2>
+            <div class="queue-list" id="queue-list">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+    </main>
+
+    <!-- ── Settings Modal ──────────────────────────────────────────────── -->
+    <div class="modal-overlay" id="modal-settings">
+        <div class="modal" role="dialog" aria-labelledby="settings-title">
+            <div class="modal-header">
+                <h2 id="settings-title">Settings</h2>
+                <button class="modal-close" data-close="modal-settings" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Auth section -->
+                <div class="settings-group">
+                    <h3>Authentication</h3>
+                    <div class="field">
+                        <label>Cookies File</label>
+                        <div class="cookie-upload" id="cookie-upload">
+                            <input type="file" id="cookie-file" accept=".txt" hidden>
+                            <button type="button" class="btn-secondary" id="btn-upload-cookie">
+                                Place cookies.txt
+                            </button>
+                            <span class="cookie-status" id="cookie-status">No file selected</span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-secondary" id="btn-sign-out"
+                        style="display: none">Disconnect</button>
+                    <button type="button" class="btn-secondary" id="btn-connect">Reconnect</button>
+                </div>
+
+                <!-- Song options -->
+                <div class="settings-group">
+                    <h3>Song Options</h3>
+                    <div class="field">
+                        <label for="cfg-song-codec">Codec</label>
+                        <select class="select-input" id="cfg-song-codec">
+                            <option value="aac-legacy">AAC 256kbps (Stable)</option>
+                            <option value="aac-he-legacy">AAC-HE 64kbps (Stable)</option>
+                            <option value="aac">AAC 256kbps 48kHz (Experimental)</option>
+                            <option value="aac-he">AAC-HE 64kbps 48kHz (Experimental)</option>
+                            <option value="aac-binaural">AAC Binaural (Experimental)</option>
+                            <option value="aac-downmix">AAC Downmix (Experimental)</option>
+                            <option value="atmos">Dolby Atmos (Experimental)</option>
+                            <option value="ac3">AC3 640kbps (Experimental)</option>
+                            <option value="alac">ALAC Lossless (Experimental)</option>
+                        </select>
+                        <span class="help-text">Experimental codecs require the wrapper to be enabled and running to
+                            decrypt the
+                            DRM.</span>
+                    </div>
+                    <div class="field-row" style="margin-bottom: 20px;">
+                        <label class="checkbox-label" title="Enable to use wrapper for DRM decryption">
+                            <input type="checkbox" id="cfg-use-wrapper">
+                            <span>Use Wrapper</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <label for="cfg-lyrics-format">Synced Lyrics Format</label>
+                        <select class="select-input" id="cfg-lyrics-format">
+                            <option value="lrc">LRC</option>
+                            <option value="srt">SRT</option>
+                            <option value="ttml">TTML</option>
+                        </select>
+                    </div>
+                    <div class="field-row">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="cfg-save-synced-lyrics">
+                            <span>Save synced lyrics file</span>
+                        </label>
+                    </div>
+                    <div class="field-row">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="cfg-no-synced-lyrics">
+                            <span>Skip synced lyrics</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="cfg-synced-lyrics-only">
+                            <span>Lyrics only</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Music video options -->
+                <div class="settings-group">
+                    <h3>Music Video</h3>
+                    <div class="field">
+                        <label for="cfg-mv-resolution">Max Resolution</label>
+                        <select class="select-input" id="cfg-mv-resolution">
+                            <option value="2160p">4K (2160p)</option>
+                            <option value="1440p">1440p</option>
+                            <option value="1080p" selected>1080p</option>
+                            <option value="720p">720p</option>
+                            <option value="480p">480p</option>
+                            <option value="360p">360p</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Output options -->
+                <div class="settings-group">
+                    <h3>Output</h3>
+
+                    <div class="field">
+                        <label for="cfg-cover-format">Cover Format</label>
+                        <select class="select-input" id="cfg-cover-format">
+                            <option value="jpg">JPG</option>
+                            <option value="png">PNG</option>
+                            <option value="raw">Raw</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="cfg-cover-size">Cover Size (px)</label>
+                        <input type="number" class="text-input" id="cfg-cover-size" min="100" max="3000" value="1200">
+                    </div>
+                    <div class="field-row">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="cfg-save-cover">
+                            <span>Save cover as separate file</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="cfg-overwrite">
+                            <span>Overwrite existing files</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Advanced -->
+                <div class="settings-group">
+                    <h3>Advanced</h3>
+                    <div class="field">
+                        <label for="cfg-download-mode">Download Mode</label>
+                        <select class="select-input" id="cfg-download-mode">
+                            <option value="ytdlp">yt-dlp (Stable)</option>
+                            <option value="nm3u8dlre">N_m3u8DL-RE</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="cfg-remux-mode">Remux Mode</label>
+                        <select class="select-input" id="cfg-remux-mode">
+                            <option value="ffmpeg">FFmpeg (Stable)</option>
+                            <option value="mp4box">MP4Box</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="cfg-language">Metadata Language</label>
+                        <input type="text" class="text-input" id="cfg-language" placeholder="en-US">
+                    </div>
+                    <div class="field">
+                        <label for="cfg-rate-limit-delay">Rate Limit Delay (seconds)</label>
+                        <input type="number" class="text-input" id="cfg-rate-limit-delay" min="0" max="60" step="0.5"
+                            value="2">
+                        <span class="help-text">Default value: 7</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" data-close="modal-settings">Cancel</button>
+                <button type="button" class="btn-primary" id="btn-save-settings">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Info Modal ──────────────────────────────────────────────────── -->
+    <div class="modal-overlay" id="modal-info">
+        <div class="modal modal-sm" role="dialog" aria-labelledby="info-title">
+            <div class="modal-header">
+                <h2 id="info-title">About</h2>
+                <button class="modal-close" data-close="modal-info" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="about-content">
+                    <h3 class="about-name">amdlxd</h3>
+                    <p class="about-version">Apple Music Downloader Xpanded
+                    <p class="about-desc">
+                        A web app for downloading Apple Music songs, music videos and post videos.
+                    </p>
+                    <div class="about-links">
+                        <a href="" target="_blank" rel="noopener">GitHub</a>
+                        <a href="" target="_blank" rel="noopener">Discord</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/auth-storage.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/events.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"
+        referrerpolicy="no-referrer"></script>
+    <script src="/js/app.js"></script>
+</body>
+
+</html>
