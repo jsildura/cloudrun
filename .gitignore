@@ -8,6 +8,9 @@ __pycache__
 !Dockerfile
 !cloudrun.yaml
 !deploy.sh
+!Start_Tunnel.bat
+!Start_Server.bat
+!run_server.py
 !wrangler.jsonc
 !.gitignore
 !.python-version
