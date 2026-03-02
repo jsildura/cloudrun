@@ -72,8 +72,9 @@ import os
 origins = [
     "http://localhost:8080",        # Local dev
     "http://localhost:3000",        # Local dev (alt port)
-    "http://127.0.0.1:8080",        # Local dev
+    "http://127.0.0.1:8080",       # Local dev
     "https://gamdl.pages.dev",      # Production Cloudflare Pages default
+    "https://amdlxd.stormygenesis.workers.dev",  # Cloudflare Workers
 ]
 
 # Add custom origins from environment (for Cloudflare Pages custom domains)
@@ -85,7 +86,7 @@ if os.environ.get("CORS_ORIGINS"):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"https://.*\.gamdl\.pages\.dev",  # Preview deployments
+    allow_origin_regex=r"https://.*\.(gamdl\.pages\.dev|workers\.dev|trycloudflare\.com)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
