@@ -111,6 +111,10 @@ class GamdlApi {
         return this._fetch('/api/wrapper/status');
     }
 
+    async restartWrapper() {
+        return this._fetch('/api/wrapper/restart', { method: 'POST' });
+    }
+
     // ── Files ─────────────────────────────────────────────────────────────
 
     async getFiles() {

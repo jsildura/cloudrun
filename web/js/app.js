@@ -200,10 +200,12 @@
     }
 
     async function checkWrapperStatus() {
+        const restartBtn = $('#btn-restart-wrapper');
         // Default to disabled while checking
         wrapperCheckbox.disabled = true;
         wrapperStatusDot.className = 'wrapper-status-dot';
         wrapperStatusDot.title = 'Checking...';
+        if (restartBtn) restartBtn.style.display = 'none';
 
         try {
             const { available } = await api.getWrapperStatus();
@@ -211,16 +213,53 @@
                 wrapperCheckbox.disabled = false;
                 wrapperStatusDot.className = 'wrapper-status-dot online';
                 wrapperStatusDot.title = 'Wrapper is running';
+                if (restartBtn) restartBtn.style.display = 'none';
             } else {
                 wrapperCheckbox.disabled = true;
                 wrapperStatusDot.className = 'wrapper-status-dot offline';
                 wrapperStatusDot.title = 'Wrapper is not reachable';
+                if (restartBtn) restartBtn.style.display = '';
             }
         } catch (e) {
             wrapperCheckbox.disabled = true;
             wrapperStatusDot.className = 'wrapper-status-dot offline';
             wrapperStatusDot.title = 'Wrapper is not reachable';
+            if (restartBtn) restartBtn.style.display = '';
         }
+    }
+
+    async function restartWrapper() {
+        const restartBtn = $('#btn-restart-wrapper');
+        if (!restartBtn) return;
+
+        // Show loading state
+        restartBtn.disabled = true;
+        restartBtn.classList.add('restarting');
+        const originalHTML = restartBtn.innerHTML;
+        restartBtn.innerHTML = `
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="spin-icon">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+            <span>Restarting...</span>
+        `;
+
+        try {
+            const result = await api.restartWrapper();
+            if (result.success) {
+                toast('Wrapper restarted successfully', 'success');
+            } else {
+                toast(result.message || 'Failed to restart wrapper', 'error');
+            }
+        } catch (e) {
+            toast('Failed to restart wrapper: ' + e.message, 'error');
+        }
+
+        // Re-check status
+        restartBtn.disabled = false;
+        restartBtn.classList.remove('restarting');
+        restartBtn.innerHTML = originalHTML;
+        await checkWrapperStatus();
     }
 
     function setConfigFields(cfg) {
@@ -1095,6 +1134,14 @@
             updateAuthBadge({ authenticated: false });
             updateCookieStatus();
             toast('Signed out', 'info');
+        });
+    }
+
+    // Restart Wrapper
+    const btnRestartWrapper = $('#btn-restart-wrapper');
+    if (btnRestartWrapper) {
+        btnRestartWrapper.addEventListener('click', () => {
+            restartWrapper();
         });
     }
 

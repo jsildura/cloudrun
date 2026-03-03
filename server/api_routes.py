@@ -266,6 +266,63 @@ async def wrapper_status() -> dict:
     return {"available": available}
 
 
+@router.post("/wrapper/restart")
+async def wrapper_restart() -> dict:
+    """Kill existing Wrapper process and start a new one."""
+    import asyncio
+    import subprocess
+    import urllib.request
+    import urllib.error
+
+    wrapper_bin = "/app/Wrapper/wrapper"
+
+    def _do_restart():
+        # 1. Kill any existing wrapper processes
+        try:
+            subprocess.run(
+                ["pkill", "-f", "wrapper"],
+                timeout=5,
+                capture_output=True,
+            )
+        except Exception:
+            pass
+
+        import time
+        time.sleep(1)
+
+        # 2. Check if the wrapper binary exists
+        import os
+        if not os.path.isfile(wrapper_bin):
+            return {"success": False, "message": "Wrapper binary not found"}
+
+        # 3. Start the wrapper in the background
+        try:
+            subprocess.Popen(
+                ["./wrapper", "-H", "0.0.0.0"],
+                cwd="/app/Wrapper",
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception as e:
+            return {"success": False, "message": f"Failed to start: {e}"}
+
+        # 4. Wait and then ping to verify it started
+        time.sleep(3)
+
+        cfg = _get_current_config()
+        url = cfg.wrapper_account_url
+        try:
+            req = urllib.request.Request(url, method="GET")
+            urllib.request.urlopen(req, timeout=3)
+            return {"success": True, "message": "Wrapper restarted successfully"}
+        except Exception:
+            return {"success": False, "message": "Wrapper started but not responding yet, try again in a few seconds"}
+
+    result = await asyncio.get_event_loop().run_in_executor(None, _do_restart)
+    return result
+
+
 @router.get("/config")
 async def get_config(request: Request) -> dict:
     _check_rate_limit(request)

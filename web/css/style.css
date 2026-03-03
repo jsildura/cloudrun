@@ -797,6 +797,49 @@ a:hover {
     background: var(--error);
 }
 
+/* ── Wrapper Restart Button ───────────────────────────────────────────────── */
+.btn-restart-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 30px;
+    padding: 0 10px;
+    background: rgba(255, 159, 10, 0.1);
+    border: 1px solid rgba(255, 159, 10, 0.3);
+    border-radius: var(--radius-sm);
+    color: #ff9f0a;
+    font-family: var(--font);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    -webkit-tap-highlight-color: transparent;
+    margin-left: auto;
+}
+
+.btn-restart-wrapper:hover {
+    background: rgba(255, 159, 10, 0.2);
+    border-color: #ff9f0a;
+}
+
+.btn-restart-wrapper:active {
+    transform: scale(0.95);
+}
+
+.btn-restart-wrapper:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-restart-wrapper .spin-icon {
+    animation: spin 1s linear infinite;
+}
+
+.btn-restart-wrapper.restarting {
+    border-color: rgba(255, 159, 10, 0.5);
+}
+
 
 /* ── Buttons ───────────────────────────────────────────────────────────────── */
 .btn-primary {
