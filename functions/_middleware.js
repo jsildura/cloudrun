@@ -59,7 +59,7 @@ export async function onRequest(context) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gamdl - Authenticate</title>
+    <title>Amdlxd - Authenticate</title>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -223,7 +223,7 @@ export async function onRequest(context) {
             </svg>
         </div>
         <h1>Protected Access</h1>
-        <p class="subtitle">Please enter the password to access Gamdl</p>
+        <p class="subtitle">Please enter the password to access Amdlxd</p>
         
         <form action="/login" method="POST">
             <div class="input-group">
@@ -232,7 +232,7 @@ export async function onRequest(context) {
                 </svg>
                 <input type="password" name="password" placeholder="Password" required autofocus>
             </div>
-            <button type="submit">Unlock</button>
+            <button type="submit">Login</button>
         </form>
         
         <div class="error-message">Incorrect password. Please try again.</div>
