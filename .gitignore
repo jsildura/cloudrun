@@ -4,6 +4,7 @@ __pycache__
 !server
 !web
 !src
+!functions
 !Wrapper
 !Dockerfile
 !cloudrun.yaml
