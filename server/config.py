@@ -108,6 +108,10 @@ def load_config(config_path: Path = DEFAULT_CONFIG_PATH) -> ServerConfig:
         config.r2_secret_key = os.environ["R2_SECRET_KEY"]
     if os.environ.get("R2_BUCKET"):
         config.r2_bucket = os.environ["R2_BUCKET"]
+    if os.environ.get("WRAPPER_ACCOUNT_URL"):
+        config.wrapper_account_url = os.environ["WRAPPER_ACCOUNT_URL"]
+    if os.environ.get("WRAPPER_DECRYPT_IP"):
+        config.wrapper_decrypt_ip = os.environ["WRAPPER_DECRYPT_IP"]
 
     return config
 
