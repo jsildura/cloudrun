@@ -44,6 +44,8 @@
     const cookieStatus = $('#cookie-status');
     const btnConnect = $('#btn-connect');
     const btnSignOut = $('#btn-sign-out');
+    const wrapperCheckbox = $('#cfg-use-wrapper');
+    const wrapperStatusDot = $('#wrapper-status');
 
     // Info modal
     const modalInfo = $('#modal-info');
@@ -193,6 +195,32 @@
         } catch (e) {
             console.error('Failed to load config:', e);
         }
+        // Check wrapper availability (non-blocking)
+        checkWrapperStatus();
+    }
+
+    async function checkWrapperStatus() {
+        // Default to disabled while checking
+        wrapperCheckbox.disabled = true;
+        wrapperStatusDot.className = 'wrapper-status-dot';
+        wrapperStatusDot.title = 'Checking...';
+
+        try {
+            const { available } = await api.getWrapperStatus();
+            if (available) {
+                wrapperCheckbox.disabled = false;
+                wrapperStatusDot.className = 'wrapper-status-dot online';
+                wrapperStatusDot.title = 'Wrapper is running';
+            } else {
+                wrapperCheckbox.disabled = true;
+                wrapperStatusDot.className = 'wrapper-status-dot offline';
+                wrapperStatusDot.title = 'Wrapper is not reachable';
+            }
+        } catch (e) {
+            wrapperCheckbox.disabled = true;
+            wrapperStatusDot.className = 'wrapper-status-dot offline';
+            wrapperStatusDot.title = 'Wrapper is not reachable';
+        }
     }
 
     function setConfigFields(cfg) {
@@ -330,7 +358,7 @@
             // Update tracks in-place
             const tracksContainer = existing.querySelector('.job-tracks');
             if (tracksContainer && job.tracks.length) {
-                // Get existing track items (exclude save-all button)
+                // Get existing track items
                 const existingTracks = tracksContainer.querySelectorAll('.track-item');
 
                 job.tracks.forEach((track, i) => {
@@ -344,11 +372,10 @@
                             existingTracks[i].replaceWith(newEl);
                         }
                     } else {
-                        // New track — insert before save-all button if present
-                        const saveAll = tracksContainer.querySelector('.job-save-all');
+                        // New track — append to tracks container
                         const temp = document.createElement('div');
                         temp.innerHTML = newHtml.trim();
-                        tracksContainer.insertBefore(temp.firstElementChild, saveAll);
+                        tracksContainer.appendChild(temp.firstElementChild);
                     }
                 });
 
@@ -561,18 +588,15 @@
     }
 
     /**
-     * Show a "Save" button on the job card for completed jobs.
-     * Blobs are pre-fetched in background; clicking the button triggers the
-     * Prepare a native download link on the job card for completed jobs.
-     * Builds the final blob (single file or ZIP) in the background, then creates
-     * a real `<a href="blob:..." download="filename">` link. When the user clicks
-     * it, the browser handles the download natively — no JS `a.click()` needed,
-     * so Chrome's user-gesture policy is never an issue.
+     * Auto-save completed job files.
+     * Blobs are pre-fetched in background; once the job is done this function
+     * waits for all blobs, optionally ZIP-compresses them, then triggers the
+     * browser's native save dialog automatically — no extra click needed.
      */
     async function prepareSaveLink(job) {
         const isPreviewJob = previewSection.classList.contains('visible');
 
-        // Wait for all pending blob fetches (audio + lyrics) to complete
+        // Wait for all pending blob fetches (audio + lyrics + covers) to complete
         const pending = _blobPromises[job.job_id];
         if (pending) await Promise.all(Object.values(pending));
         const pendingLyrics = _lyricsBlobPromises[job.job_id];
@@ -586,13 +610,9 @@
         if (blobCount === 0) return; // Nothing to save
 
         const card = $(`[data-job-id="${job.job_id}"]`);
-        const tracksContainer = card?.querySelector('.job-tracks');
         const statusEl = card?.querySelector('.job-status');
 
-        // Don't add duplicate save links
-        if (card && card.querySelector('.job-save-all')) return;
-
-        // Collect all files (audio + lyrics) into a single entries array
+        // Collect all files (audio + lyrics + covers) into a single entries array
         const entries = Object.values(jobBlobs);
         const lyricsEntries = _lyricsBlobs[job.job_id]
             ? Object.values(_lyricsBlobs[job.job_id])
@@ -605,23 +625,28 @@
         let finalBlob, finalFilename;
 
         if (allEntries.length === 1) {
-            // ── Single track, no lyrics — use the blob directly ──
+            // ── Single file — save directly ──
             finalBlob = allEntries[0].blob;
             finalFilename = allEntries[0].filename;
         } else {
             // ── Multi-file — compress to ZIP in background ──
-            // (multiple tracks, or single track + lyrics file)
             if (typeof JSZip === 'undefined') {
-                // Fallback: create individual download links
-                if (tracksContainer) {
-                    const linksHtml = allEntries.map(({ blob, filename }) => {
-                        const url = URL.createObjectURL(blob);
-                        return `<a href="${url}" download="${escapeHtml(filename)}" class="btn-save-all" style="display:block;margin-bottom:6px;text-align:center;">💾 ${escapeHtml(filename)}</a>`;
-                    }).join('');
-                    tracksContainer.insertAdjacentHTML('beforeend',
-                        `<div class="job-save-all">${linksHtml}</div>`
-                    );
+                // Fallback: trigger individual save dialogs for each file
+                for (const { blob, filename } of allEntries) {
+                    triggerSave(blob, filename);
                 }
+                if (statusEl) {
+                    statusEl.textContent = 'Saved';
+                    statusEl.className = 'job-status done';
+                }
+                if (isPreviewJob) setStatusText('Saved');
+                // Clean up blobs from memory
+                delete _trackBlobs[job.job_id];
+                delete _blobPromises[job.job_id];
+                delete _lyricsBlobs[job.job_id];
+                delete _lyricsBlobPromises[job.job_id];
+                delete _coverBlobs[job.job_id];
+                delete _coverBlobPromises[job.job_id];
                 return;
             }
 
@@ -650,29 +675,21 @@
             else if (first?.artist) zipName = first.artist;
             zipName = zipName.replace(/[<>:"/\\|?*]/g, '_').trim();
             finalFilename = `${zipName}.zip`;
-
-            if (statusEl) {
-                statusEl.textContent = 'Ready';
-                statusEl.className = 'job-status done';
-            }
         }
 
-        // Create the blob URL
-        const blobUrl = URL.createObjectURL(finalBlob);
+        // Auto-trigger browser save dialog
+        triggerSave(finalBlob, finalFilename);
 
-        // Insert save link into queue card
-        if (tracksContainer) {
-            tracksContainer.insertAdjacentHTML('beforeend',
-                `<div class="job-save-all"><a href="${blobUrl}" download="${escapeHtml(finalFilename)}" class="btn-save-all">Save</a></div>`
-            );
+        // Update status to reflect saved state
+        if (statusEl) {
+            statusEl.textContent = 'Saved';
+            statusEl.className = 'job-status done';
         }
-
-        // Update status container with save link for preview-linked jobs
         if (isPreviewJob) {
-            setStatus(`<a href="${blobUrl}" download="${escapeHtml(finalFilename)}" class="status-save-link">Save ${escapeHtml(finalFilename)}</a>`);
+            setStatusText(`Saved ${finalFilename}`);
         }
 
-        // Clean up blobs from memory (the blob URL keeps a reference)
+        // Clean up blobs from memory
         delete _trackBlobs[job.job_id];
         delete _blobPromises[job.job_id];
         delete _lyricsBlobs[job.job_id];

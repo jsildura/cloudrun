@@ -107,6 +107,10 @@ class GamdlApi {
         });
     }
 
+    async getWrapperStatus() {
+        return this._fetch('/api/wrapper/status');
+    }
+
     // ── Files ─────────────────────────────────────────────────────────────
 
     async getFiles() {

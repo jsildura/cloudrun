@@ -244,6 +244,28 @@ async def retry_all_failed(job_id: str, request: Request) -> dict:
 # ── Config ────────────────────────────────────────────────────────────────────
 
 
+@router.get("/wrapper/status")
+async def wrapper_status() -> dict:
+    """Check if the Wrapper service is reachable."""
+    import asyncio
+    import urllib.request
+    import urllib.error
+
+    cfg = _get_current_config()
+    url = cfg.wrapper_account_url  # e.g. http://127.0.0.1:30020/
+
+    def _ping():
+        try:
+            req = urllib.request.Request(url, method="GET")
+            urllib.request.urlopen(req, timeout=2)
+            return True
+        except Exception:
+            return False
+
+    available = await asyncio.get_event_loop().run_in_executor(None, _ping)
+    return {"available": available}
+
+
 @router.get("/config")
 async def get_config(request: Request) -> dict:
     _check_rate_limit(request)
