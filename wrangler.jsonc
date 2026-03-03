@@ -1,5 +1,5 @@
 {
-	"name": "amdlxd",
+	"name": "amdl-xd",
 	"compatibility_date": "2025-09-27",
 	"main": "src/worker.js",
 	"assets": {
