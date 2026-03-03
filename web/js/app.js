@@ -634,22 +634,58 @@
      */
     async function prepareSaveLink(job) {
         const isPreviewJob = previewSection.classList.contains('visible');
+        const totalTracks = job.tracks ? job.tracks.length : 0;
 
-        // Wait for all pending blob fetches (audio + lyrics + covers) to complete
+        // Helper to update both card status and preview status together
+        const card = $(`[data-job-id="${job.job_id}"]`);
+        const statusEl = card?.querySelector('.job-status');
+
+        function updateFetchStatus(text, pct) {
+            if (statusEl) statusEl.textContent = text;
+            if (isPreviewJob) {
+                const progressBar = pct >= 0
+                    ? `<div class="status-progress-bar processing"><div class="status-progress-fill" style="width:${pct}%"></div></div>`
+                    : '';
+                setStatus(`<span class="status-text">${escapeHtml(text)}</span>${progressBar}`);
+            }
+        }
+
+        // Wait for all pending blob fetches with progress tracking
         const pending = _blobPromises[job.job_id];
-        if (pending) await Promise.all(Object.values(pending));
         const pendingLyrics = _lyricsBlobPromises[job.job_id];
-        if (pendingLyrics) await Promise.all(Object.values(pendingLyrics));
         const pendingCovers = _coverBlobPromises[job.job_id];
-        if (pendingCovers) await Promise.all(Object.values(pendingCovers));
+        const allPromises = [
+            ...(pending ? Object.values(pending) : []),
+            ...(pendingLyrics ? Object.values(pendingLyrics) : []),
+            ...(pendingCovers ? Object.values(pendingCovers) : []),
+        ];
+        const totalFetches = allPromises.length;
+
+        if (totalFetches > 1) {
+            // Track progress as each blob resolves
+            let fetchedCount = 0;
+            updateFetchStatus(`Fetching ${fetchedCount}/${totalTracks} tracks\u2026`, 0);
+
+            const trackedPromises = allPromises.map(p =>
+                p.then(() => {
+                    fetchedCount++;
+                    const pct = Math.round((fetchedCount / totalFetches) * 100);
+                    // Show track count for audio, but total items count for the pct
+                    const tracksFetched = Math.min(fetchedCount, totalTracks);
+                    updateFetchStatus(`Fetching ${tracksFetched}/${totalTracks} tracks\u2026`, pct);
+                })
+            );
+            await Promise.all(trackedPromises);
+        } else {
+            // Single file or no files — just wait without granular progress
+            if (totalFetches === 1) updateFetchStatus('Fetching track\u2026', 50);
+            await Promise.all(allPromises);
+        }
 
         const jobBlobs = _trackBlobs[job.job_id];
         const blobCount = jobBlobs ? Object.keys(jobBlobs).length : 0;
 
         if (blobCount === 0) return; // Nothing to save
-
-        const card = $(`[data-job-id="${job.job_id}"]`);
-        const statusEl = card?.querySelector('.job-status');
 
         // Collect all files (audio + lyrics + covers) into a single entries array
         const entries = Object.values(jobBlobs);
@@ -674,11 +710,8 @@
                 for (const { blob, filename } of allEntries) {
                     triggerSave(blob, filename);
                 }
-                if (statusEl) {
-                    statusEl.textContent = 'Saved';
-                    statusEl.className = 'job-status done';
-                }
-                if (isPreviewJob) setStatusText('Saved');
+                updateFetchStatus('Saved', -1);
+                if (statusEl) statusEl.className = 'job-status done';
                 // Clean up blobs from memory
                 delete _trackBlobs[job.job_id];
                 delete _blobPromises[job.job_id];
@@ -689,8 +722,7 @@
                 return;
             }
 
-            if (statusEl) statusEl.textContent = 'Compressing 0%';
-            if (isPreviewJob) setStatusText('Compressing 0%...');
+            updateFetchStatus('Compressing 0%', 0);
 
             const zip = new JSZip();
             for (const { blob, filename } of allEntries) {
@@ -701,8 +733,7 @@
                 { type: 'blob', compression: 'STORE' },
                 (meta) => {
                     const pct = Math.round(meta.percent);
-                    if (statusEl) statusEl.textContent = `Compressing ${pct}%`;
-                    if (isPreviewJob) setStatusText(`Compressing ${pct}%...`);
+                    updateFetchStatus(`Compressing ${pct}%`, pct);
                 }
             );
 
@@ -719,13 +750,13 @@
         // Auto-trigger browser save dialog
         triggerSave(finalBlob, finalFilename);
 
-        // Update status to reflect saved state
+        // Update status to reflect saved state (no more processing animation)
         if (statusEl) {
             statusEl.textContent = 'Saved';
             statusEl.className = 'job-status done';
         }
         if (isPreviewJob) {
-            setStatusText(`Saved ${finalFilename}`);
+            setStatus(`<span class="status-text">${escapeHtml('Saved ' + finalFilename)}</span>`);
         }
 
         // Clean up blobs from memory
@@ -935,8 +966,10 @@
 
         // Build progress bar HTML
         let progressBar = '';
+        const isProcessing = (stage === 'downloading') || (stage === 'done');
         if (progressPct >= 0) {
-            progressBar = `<div class="status-progress-bar"><div class="status-progress-fill" style="width:${progressPct}%"></div></div>`;
+            const processingClass = isProcessing ? ' processing' : '';
+            progressBar = `<div class="status-progress-bar${processingClass}"><div class="status-progress-fill" style="width:${progressPct}%"></div></div>`;
         }
 
         const html = `<span class="status-text">${escapeHtml(headerText)}</span>`
