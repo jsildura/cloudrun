@@ -7,6 +7,6 @@
 		"binding": "ASSETS"
 	},
 	"vars": {
-		"API_URL": "https://scared-feliza-amdlxd-91dad0b5.koyeb.app"
+		"API_URL": "http://16.176.205.50:8000"
 	}
 }
