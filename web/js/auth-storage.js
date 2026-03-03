@@ -68,10 +68,13 @@ class AuthStorage {
             const name = fields[5].trim();
             const value = fields[6].trim();
 
+            // Many extensions prefix HTTP-only cookies with #HttpOnly_
+            const cleanDomain = domain.startsWith('#HttpOnly_') ? domain.substring(10) : domain;
+
             // Match exactly how the Python gamdl library does it:
             //   cookie.name == "media-user-token"
             //   cookie.domain == ".music.apple.com"
-            if (name === this.TOKEN_NAME && domain === this.COOKIE_DOMAIN) {
+            if (name === this.TOKEN_NAME && cleanDomain === this.COOKIE_DOMAIN) {
                 if (value) {
                     return value;
                 }
