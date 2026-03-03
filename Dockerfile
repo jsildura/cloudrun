@@ -46,12 +46,12 @@ COPY start.sh .
 RUN chmod +x start.sh
 
 # ── Runtime configuration ────────────────────────────────────────────────────
-ENV PORT=7860
+ENV PORT=8000
 ENV CLOUD_MODE=true
-EXPOSE 7860
+EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/api/config')" || exit 1
+    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://localhost:'+os.environ.get('PORT','8000')+'/api/config')" || exit 1
 
 CMD ["bash", "start.sh"]

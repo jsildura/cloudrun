@@ -24,5 +24,5 @@ else
 fi
 
 # Start the FastAPI backend
-echo "[2/2] Starting Gamdl Backend on port 7860..."
-exec uvicorn server.main:app --host 0.0.0.0 --port 7860 --workers 1
+echo "[2/2] Starting Gamdl Backend on port ${PORT:-8000}..."
+exec uvicorn server.main:app --host 0.0.0.0 --port "${PORT:-8000}" --workers 1

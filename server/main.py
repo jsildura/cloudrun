@@ -86,7 +86,7 @@ if os.environ.get("CORS_ORIGINS"):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"https://.*\.(gamdl\.pages\.dev|workers\.dev|trycloudflare\.com|hf\.space)",
+    allow_origin_regex=r"https://.*\.(gamdl\.pages\.dev|workers\.dev|trycloudflare\.com|hf\.space|koyeb\.app)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
