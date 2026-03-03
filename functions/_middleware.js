@@ -79,20 +79,26 @@ export async function onRequest(context) {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }
 
+        html {
+            height: 100%;
+        }
+
         body {
             background-color: var(--bg-color);
             color: var(--text-main);
-            min-height: 100vh;
+            min-height: 100%;
+            height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 24px;
             overflow: hidden;
             position: relative;
         }
 
         /* Moving Gradient Background */
         .ambient-bg {
-            position: absolute;
+            position: fixed;
             top: -50%;
             left: -50%;
             width: 200%;
@@ -178,6 +184,7 @@ export async function onRequest(context) {
             font-size: 16px;
             outline: none;
             transition: all 0.2s;
+            -webkit-appearance: none;
         }
 
         input[type="password"]:focus {
@@ -199,6 +206,7 @@ export async function onRequest(context) {
             font-weight: 600;
             cursor: pointer;
             transition: background 0.2s;
+            -webkit-appearance: none;
         }
 
         button:hover {
@@ -210,6 +218,28 @@ export async function onRequest(context) {
             font-size: 14px;
             margin-top: 16px;
             display: ${isError ? 'block' : 'none'};
+        }
+
+        /* Mobile responsiveness */
+        @media (max-width: 480px) {
+            body {
+                padding: 16px;
+            }
+            .login-container {
+                padding: 36px 24px;
+                border-radius: 20px;
+            }
+            .icon-container {
+                width: 56px;
+                height: 56px;
+            }
+            h1 {
+                font-size: 22px;
+            }
+            p.subtitle {
+                font-size: 14px;
+                margin-bottom: 24px;
+            }
         }
     </style>
 </head>
