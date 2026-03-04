@@ -74,6 +74,9 @@ class ServerConfig:
     music_video_remux_format: str = "m4v"
     music_video_resolution: str = "1080p"
 
+    # Video filtering
+    exclude_videos: bool = False  # skip music videos in album/playlist downloads
+
     # Post video options
     uploaded_video_quality: str = "best"
 

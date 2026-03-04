@@ -7,6 +7,7 @@ with real-time progress tracking via SSE broadcast.
 import asyncio
 import logging
 import tempfile
+import time
 import traceback
 import uuid
 from dataclasses import dataclass, field
@@ -59,6 +60,9 @@ class DownloadManager:
         self._queue: asyncio.Queue = asyncio.Queue()
         self._storage = None  # CloudStorage instance (set when cloud_mode=True)
         self._current_token: str | None = None  # User's raw token for R2 key prefixing
+        self._preview_cache: dict[str, tuple[float, PreviewResponse]] = {}
+        self.PREVIEW_CACHE_TTL = 600  # 10 minutes
+        self._job_download_queues: dict[str, list] = {}  # job_id -> cached download queue
 
     def set_storage(self, storage) -> None:
         """Set the CloudStorage instance for R2 uploads."""
@@ -250,6 +254,23 @@ class DownloadManager:
         )
         return downloader
 
+    def _is_collection_url(self, url: str) -> bool:
+        """Return True if *url* points to an album or playlist (not a single song/video)."""
+        from gamdl.downloader.constants import (
+            ALBUM_MEDIA_TYPE,
+            PLAYLIST_MEDIA_TYPE,
+            VALID_URL_PATTERN,
+        )
+        match = VALID_URL_PATTERN.match(url)
+        if not match:
+            return False
+        groups = match.groupdict()
+        url_type = groups.get("type") or groups.get("library_type")
+        # sub_id means a specific song inside an album URL
+        if groups.get("sub_id"):
+            return False
+        return url_type in ALBUM_MEDIA_TYPE or url_type in PLAYLIST_MEDIA_TYPE
+
     async def preview_url(self, url: str, config: ServerConfig) -> PreviewResponse:
         """Fetch metadata for a URL without downloading. Returns preview info."""
         from gamdl.downloader.constants import (
@@ -259,6 +280,22 @@ class DownloadManager:
             SONG_MEDIA_TYPE,
             VALID_URL_PATTERN,
         )
+
+        # --- Cache logic ---
+        cache_key = f"{url}:{config.exclude_videos}"
+
+        # Cleanup expired entries
+        now = time.time()
+        expired = [k for k, (ts, _) in self._preview_cache.items() if now - ts > self.PREVIEW_CACHE_TTL]
+        for k in expired:
+            del self._preview_cache[k]
+
+        # Cache hit
+        if cache_key in self._preview_cache:
+            logger.info("[Preview] Cache hit for %s", url)
+            return self._preview_cache[cache_key][1]
+
+        logger.info("[Preview] Cache miss for %s — fetching from API", url)
 
         if not self._apple_music_api:
             raise ValueError("Not authenticated")
@@ -282,19 +319,19 @@ class DownloadManager:
         media_type = ""
 
         if url_type in SONG_MEDIA_TYPE:
-            response = await api.get_song(media_id)
+            response = await api.get_song(media_id, extend="extendedAssetUrls,editorialVideo")
             media_type = "song"
         elif url_type in ALBUM_MEDIA_TYPE:
             if is_library:
                 response = await api.get_library_album(media_id)
             else:
-                response = await api.get_album(media_id)
+                response = await api.get_album(media_id, extend="extendedAssetUrls,editorialVideo")
             media_type = "album"
         elif url_type in PLAYLIST_MEDIA_TYPE:
             if is_library:
                 response = await api.get_library_playlist(media_id)
             else:
-                response = await api.get_playlist(media_id)
+                response = await api.get_playlist(media_id, extend="extendedAssetUrls,editorialVideo")
             media_type = "playlist"
         elif url_type in MUSIC_VIDEO_MEDIA_TYPE:
             response = await api.get_music_video(media_id)
@@ -324,9 +361,23 @@ class DownloadManager:
         release_date = attrs.get("releaseDate", "")
         year = release_date[:4] if release_date else ""
 
+        # Extract animated artwork URL (HLS video) if available
+        editorial_video = attrs.get("editorialVideo", {})
+        animated_artwork_url = ""
+        # Prefer square variant for our 1:1 artwork container
+        for variant in ("motionSquareVideo1x1", "motionDetailSquare"):
+            vid = editorial_video.get(variant, {})
+            if vid.get("video"):
+                animated_artwork_url = vid["video"]
+                break
+
         # Build track list
         tracks = []
         total_duration_ms = 0
+
+        # Dolby Atmos: use album-level audioTraits (matches Apple Music behaviour)
+        album_audio_traits = attrs.get("audioTraits", [])
+        has_dolby_atmos = "atmos" in album_audio_traits
 
         if media_type == "song":
             # Single song — one track
@@ -343,6 +394,13 @@ class DownloadManager:
             # Album or playlist — extract tracks from relationships
             relationships = data.get("relationships", {})
             tracks_data = relationships.get("tracks", {}).get("data", [])
+
+            # Filter out music-video tracks when the setting is enabled
+            if config.exclude_videos:
+                tracks_data = [
+                    t for t in tracks_data if t.get("type") != "music-videos"
+                ]
+
             for i, track in enumerate(tracks_data):
                 t_attrs = track.get("attributes", {})
                 duration = t_attrs.get("durationInMillis", 0)
@@ -353,9 +411,10 @@ class DownloadManager:
                     artist=t_attrs.get("artistName", "Unknown"),
                     duration_ms=duration,
                     is_explicit=t_attrs.get("contentRating", "") == "explicit",
+                    is_video=track.get("type") == "music-videos",
                 ))
 
-        return PreviewResponse(
+        response = PreviewResponse(
             url=url,
             media_type=media_type,
             title=attrs.get("name", "Unknown"),
@@ -367,9 +426,15 @@ class DownloadManager:
             total_duration_ms=total_duration_ms,
             copyright=attrs.get("copyright", ""),
             artwork_url=artwork_url,
+            animated_artwork_url=animated_artwork_url,
             is_explicit=attrs.get("contentRating", "") == "explicit",
+            has_dolby_atmos=has_dolby_atmos,
             tracks=tracks,
         )
+
+        # Store in cache
+        self._preview_cache[cache_key] = (time.time(), response)
+        return response
 
     async def submit_download(self, url: str, config: ServerConfig) -> DownloadJob:
         """Submit a new download job. Returns the job immediately."""
@@ -417,7 +482,25 @@ class DownloadManager:
                 await self._broadcast_job(job)
                 return
 
+            # Filter out music-video items for album/playlist downloads
+            if config.exclude_videos and self._is_collection_url(url):
+                download_queue = [
+                    item for item in download_queue
+                    if not (
+                        isinstance(item, DownloadItem)
+                        and item.media_metadata
+                        and item.media_metadata.get("type") == "music-videos"
+                    )
+                ]
+                if not download_queue:
+                    job.stage = DownloadStage.ERROR
+                    job.error_message = 'All tracks were music videos and excluded by settings'
+                    await self._broadcast_job(job)
+                    return
+
             # 3. Populate track info
+            # Cache the download queue for retries
+            self._job_download_queues[job_id] = download_queue
             job.total_tracks = len(download_queue)
             job.tracks = []
             for i, item in enumerate(download_queue):
@@ -615,20 +698,31 @@ class DownloadManager:
         await self._broadcast_job(job)
 
         try:
-            downloader = self._build_downloader(config, job_id=job_id)
-            url_info = downloader.get_url_info(job.url)
-            if not url_info:
-                track.stage = DownloadStage.ERROR
-                track.error_message = "Could not parse URL for retry"
-                await self._broadcast_job(job)
-                return
+            # Use cached download queue when available (avoids redundant API call)
+            download_queue = self._job_download_queues.get(job_id)
 
-            download_queue = await downloader.get_download_queue(url_info)
-            if not download_queue or track_index >= len(download_queue):
-                track.stage = DownloadStage.ERROR
-                track.error_message = "Could not rebuild download queue"
-                await self._broadcast_job(job)
-                return
+            if download_queue and track_index < len(download_queue):
+                logger.info("[Retry] Using cached queue for job %s track %d", job_id, track_index)
+            else:
+                # Cache miss — rebuild from API (fallback)
+                logger.info("[Retry] Cache miss for job %s, rebuilding queue from API", job_id)
+                downloader = self._build_downloader(config, job_id=job_id)
+                url_info = downloader.get_url_info(job.url)
+                if not url_info:
+                    track.stage = DownloadStage.ERROR
+                    track.error_message = "Could not parse URL for retry"
+                    await self._broadcast_job(job)
+                    return
+
+                download_queue = await downloader.get_download_queue(url_info)
+                if not download_queue or track_index >= len(download_queue):
+                    track.stage = DownloadStage.ERROR
+                    track.error_message = "Could not rebuild download queue"
+                    await self._broadcast_job(job)
+                    return
+
+                # Update cache for future retries
+                self._job_download_queues[job_id] = download_queue
 
             download_item = download_queue[track_index]
 

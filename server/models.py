@@ -68,6 +68,7 @@ class PreviewTrack(BaseModel):
     artist: str = ""
     duration_ms: int = 0
     is_explicit: bool = False
+    is_video: bool = False
 
 class PreviewResponse(BaseModel):
     url: str
@@ -81,7 +82,9 @@ class PreviewResponse(BaseModel):
     total_duration_ms: int = 0
     copyright: str = ""
     artwork_url: str = ""         # high-res for display
+    animated_artwork_url: str = "" # HLS video URL for animated artwork
     is_explicit: bool = False
+    has_dolby_atmos: bool = False
     tracks: list[PreviewTrack] = []
 
 
@@ -130,6 +133,7 @@ class ConfigUpdate(BaseModel):
     music_video_remux_format: str | None = None
     music_video_resolution: str | None = None
     uploaded_video_quality: str | None = None
+    exclude_videos: bool | None = None
 
 
 # ── SSE messages ──────────────────────────────────────────────────────────────

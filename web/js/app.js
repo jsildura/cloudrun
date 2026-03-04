@@ -271,6 +271,7 @@
             'cfg-synced-lyrics-only': 'synced_lyrics_only',
             'cfg-save-synced-lyrics': 'save_synced_lyrics',
             'cfg-mv-resolution': 'music_video_resolution',
+            'cfg-exclude-videos': 'exclude_videos',
             'cfg-output-path': 'output_path',
             'cfg-cover-format': 'cover_format',
             'cfg-cover-size': 'cover_size',
@@ -304,6 +305,7 @@
             synced_lyrics_only: $('#cfg-synced-lyrics-only').checked,
             save_synced_lyrics: $('#cfg-save-synced-lyrics').checked,
             music_video_resolution: $('#cfg-mv-resolution').value,
+            exclude_videos: $('#cfg-exclude-videos').checked,
             cover_format: $('#cfg-cover-format').value,
             cover_size: parseInt($('#cfg-cover-size').value) || 1200,
             save_cover: $('#cfg-save-cover').checked,
@@ -798,25 +800,82 @@
         try {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-            canvas.width = 50;
-            canvas.height = 50;
-            ctx.drawImage(img, 0, 0, 50, 50);
-            const data = ctx.getImageData(10, 10, 30, 30).data;
-            let r = 0, g = 0, b = 0, count = 0;
-            for (let i = 0; i < data.length; i += 4) {
-                r += data[i];
-                g += data[i + 1];
-                b += data[i + 2];
-                count++;
+            const size = 64;
+            canvas.width = size;
+            canvas.height = size;
+            ctx.drawImage(img, 0, 0, size, size);
+            const data = ctx.getImageData(0, 0, size, size).data;
+
+            // Collect pixel samples, skipping near-black and near-white
+            const pixels = [];
+            for (let i = 0; i < data.length; i += 16) { // sample every 4th pixel
+                const r = data[i], g = data[i + 1], b = data[i + 2];
+                const max = Math.max(r, g, b), min = Math.min(r, g, b);
+                const lum = (max + min) / 2;
+                if (lum > 20 && lum < 240) {
+                    pixels.push([r, g, b]);
+                }
             }
-            r = Math.round(r / count);
-            g = Math.round(g / count);
-            b = Math.round(b / count);
+
+            if (pixels.length === 0) return { r: 100, g: 100, b: 100 };
+
+            // Median-cut quantization into 8 buckets
+            const buckets = medianCut(pixels, 3); // 2^3 = 8 buckets
+
+            // Score each bucket: prefer saturated, mid-luminance colors
+            let bestColor = buckets[0];
+            let bestScore = -1;
+            for (const bucket of buckets) {
+                const [r, g, b] = bucket.color;
+                const max = Math.max(r, g, b), min = Math.min(r, g, b);
+                const lum = (max + min) / 2 / 255;
+                const range = max - min;
+                const sat = max === 0 ? 0 : range / max;
+                // Prefer vivid, mid-brightness colors; weight by population
+                const score = sat * (1 - Math.abs(lum - 0.45) * 1.5) * Math.sqrt(bucket.count);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestColor = bucket;
+                }
+            }
+
+            const [r, g, b] = bestColor.color;
             return { r, g, b };
         } catch (e) {
             console.warn('[Preview] Color extraction failed:', e);
             return { r: 100, g: 100, b: 100 };
         }
+    }
+
+    function medianCut(pixels, depth) {
+        if (depth === 0 || pixels.length <= 1) {
+            // Average the bucket
+            let rSum = 0, gSum = 0, bSum = 0;
+            for (const p of pixels) { rSum += p[0]; gSum += p[1]; bSum += p[2]; }
+            const n = pixels.length || 1;
+            return [{
+                color: [Math.round(rSum / n), Math.round(gSum / n), Math.round(bSum / n)],
+                count: n,
+            }];
+        }
+
+        // Find the channel with the widest range
+        let rMin = 255, rMax = 0, gMin = 255, gMax = 0, bMin = 255, bMax = 0;
+        for (const [r, g, b] of pixels) {
+            if (r < rMin) rMin = r; if (r > rMax) rMax = r;
+            if (g < gMin) gMin = g; if (g > gMax) gMax = g;
+            if (b < bMin) bMin = b; if (b > bMax) bMax = b;
+        }
+        const ranges = [rMax - rMin, gMax - gMin, bMax - bMin];
+        const channel = ranges.indexOf(Math.max(...ranges));
+
+        // Sort by widest channel and split at median
+        pixels.sort((a, b) => a[channel] - b[channel]);
+        const mid = Math.floor(pixels.length / 2);
+        return [
+            ...medianCut(pixels.slice(0, mid), depth - 1),
+            ...medianCut(pixels.slice(mid), depth - 1),
+        ];
     }
 
     function showPreview(data) {
@@ -827,17 +886,76 @@
         previewArtist.textContent = data.artist;
 
         const genreParts = [];
-        if (data.genre) genreParts.push(data.genre);
-        if (data.year) genreParts.push(data.year);
-        previewGenre.textContent = genreParts.join(' · ');
+        if (data.genre) genreParts.push(escapeHtml(data.genre));
+        if (data.year) genreParts.push(escapeHtml(data.year));
+
+        const dolbySvg = '<svg class="format-badge-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M24 20.352V3.648H0v16.704h24zM18.433 5.806h2.736v12.387h-2.736c-2.839 0-5.214-2.767-5.214-6.194s2.375-6.193 5.214-6.193zm-15.602 0h2.736c2.839 0 5.214 2.767 5.214 6.194s-2.374 6.194-5.214 6.194H2.831V5.806z"/></svg>';
+        const losslessSvg = '<svg class="format-badge-icon lossless-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 15 9"><path fill="currentColor" d="M8.184,0.35C9.944,0.35 10.703,3.296 11.338,5.238C11.673,3.842 11.497,3.542 11.857,3.542C11.99,3.542 12.126,3.633 12.126,3.798C12.126,3.809 12.123,3.839 12.117,3.883L12.091,4.058C12.02,4.522 11.845,5.494 11.654,6.144C13.198,10.191 14.345,4.861 14.474,3.772C14.493,3.615 14.612,3.542 14.731,3.542C14.891,3.542 15.022,3.662 14.997,3.843C14.72,5.605 14.295,8.35 12.547,8.35C11.582,8.35 11.04,7.595 10.611,6.73C9.54,4.626 9.047,1.093 7.997,1.093C7.66,1.093 7.411,1.444 7.394,1.444C7.362,1.444 7.337,1.301 7.023,0.909C7.322,0.567 7.734,0.35 8.184,0.35ZM2.458,0.354C5.211,0.354 5.456,7.618 7.014,7.618C7.197,7.618 7.394,7.507 7.61,7.256C7.729,7.458 7.851,7.638 7.978,7.796C7.667,8.151 7.28,8.35 6.795,8.35C5.054,8.349 4.306,5.434 3.663,3.466C3.511,4.097 3.432,4.669 3.402,4.925C3.382,5.088 3.263,5.163 3.143,5.163C3.009,5.163 2.874,5.071 2.874,4.908L2.874,4.908L2.877,4.87C2.966,4.223 3.146,3.243 3.347,2.56C3.079,1.858 2.745,1.091 2.252,1.091C1.257,1.091 0.687,3.591 0.527,4.925C0.508,5.088 0.388,5.163 0.268,5.163C0.135,5.163 0,5.071 0,4.908C0,4.896 0.001,4.883 0.002,4.87C0.283,2.836 0.808,0.354 2.458,0.354ZM5.315,0.35C5.809,0.35 6.339,0.608 6.797,1.211C6.822,1.241 7.078,1.639 7.159,1.777C8.277,3.802 8.818,7.627 9.881,7.627C10.065,7.627 10.264,7.513 10.484,7.256C10.604,7.458 10.726,7.638 10.852,7.796C10.542,8.15 10.155,8.35 9.67,8.35C6.933,8.349 6.636,1.09 5.128,1.09C4.788,1.09 4.536,1.444 4.519,1.444C4.487,1.444 4.462,1.301 4.148,0.909C4.455,0.558 4.87,0.35 5.315,0.35Z"/></svg>';
+
+        if (data.has_dolby_atmos) {
+            genreParts.push(`<span class="format-badge">${dolbySvg} Dolby Atmos</span>`);
+        }
+        genreParts.push(`<span class="format-badge">${losslessSvg} Lossless</span>`);
+
+        previewGenre.innerHTML = genreParts.join(' · ');
         previewExplicit.style.display = data.is_explicit ? '' : 'none';
 
-        // Set artwork and extract dominant color on load
-        previewArtwork.src = data.artwork_url;
-        previewArtwork.onload = () => {
-            const color = extractDominantColor(previewArtwork);
-            previewCard.style.setProperty('--preview-bg', `rgba(${color.r},${color.g},${color.b},0.4)`);
-        };
+        // Set artwork: prefer animated (video) over static (image)
+        if (data.animated_artwork_url && typeof Hls !== 'undefined') {
+            // Animated artwork — show looping silent video
+            previewArtwork.style.display = 'none';
+
+            // Remove any existing video
+            const existingVideo = previewArtwork.parentElement.querySelector('.preview-artwork-video');
+            if (existingVideo) existingVideo.remove();
+
+            const video = document.createElement('video');
+            video.className = 'preview-artwork preview-artwork-video';
+            video.autoplay = true;
+            video.loop = true;
+            video.muted = true;
+            video.playsInline = true;
+            video.poster = data.artwork_url;
+            video.setAttribute('crossorigin', 'anonymous');
+            video.addEventListener('loadeddata', () => {
+                const wrapper = previewArtwork.parentElement;
+                wrapper.insertBefore(video, previewArtwork);
+            });
+
+            if (Hls.isSupported()) {
+                const hls = new Hls({ enableWorker: false });
+                hls.loadSource(data.animated_artwork_url);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+                // Store for cleanup
+                previewCard._hlsInstance = hls;
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                // Safari native HLS
+                video.src = data.animated_artwork_url;
+                video.addEventListener('loadedmetadata', () => video.play());
+            }
+
+            // Extract color from the static poster image
+            const posterImg = new Image();
+            posterImg.crossOrigin = 'anonymous';
+            posterImg.onload = () => {
+                const color = extractDominantColor(posterImg);
+                previewCard.style.setProperty('--preview-bg', `rgba(${color.r},${color.g},${color.b},0.4)`);
+            };
+            posterImg.src = data.artwork_url;
+        } else {
+            // Static artwork — standard image
+            // Remove any existing video
+            const existingVideo = previewArtwork.parentElement.querySelector('.preview-artwork-video');
+            if (existingVideo) existingVideo.remove();
+            previewArtwork.style.display = '';
+
+            previewArtwork.src = data.artwork_url;
+            previewArtwork.onload = () => {
+                const color = extractDominantColor(previewArtwork);
+                previewCard.style.setProperty('--preview-bg', `rgba(${color.r},${color.g},${color.b},0.4)`);
+            };
+        }
 
         // Build track list
         const tracksHtml = data.tracks.map(t => `
@@ -845,6 +963,7 @@
                 <span class="preview-track-num">${t.track_number}</span>
                 <div class="preview-track-info">
                     <div class="preview-track-name">
+                        ${t.is_video ? '<span class="video-badge" title="Music Video"><svg xmlns="http://www.w3.org/2000/svg" fill-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2" clip-rule="evenodd" viewBox="0 0 19 16" xml:space="preserve"><path fill-rule="nonzero" d="M16.747 12.437c1.166 0 1.753-.565 1.753-1.771V2.771C18.5 1.565 17.913 1 16.747 1H2.253C1.087 1 .5 1.565.5 2.771v7.895c0 1.206.587 1.771 1.753 1.771h14.494Zm-.02-1.109H2.273c-.47 0-.675-.193-.675-.675V2.791c0-.489.205-.682.675-.682h14.454c.47 0 .675.193.675.682v7.862c0 .482-.205.675-.675.675Zm-8.738-1.296c.976 0 1.637-.709 1.637-1.708V5.961c0-.255.055-.324.205-.359l1.603-.385c.327-.09.429-.159.429-.559v-1.35c0-.262-.095-.379-.457-.289l-1.991.503c-.341.082-.41.151-.41.558v3.107c0 .303-.027.358-.375.455l-.627.165c-.621.165-1.139.537-1.139 1.213 0 .585.436 1.012 1.125 1.012ZM13.828 15a.636.636 0 0 0 .627-.648.636.636 0 0 0-.627-.647H5.159a.642.642 0 0 0-.635.647c0 .359.287.648.635.648h8.669Z"></path></svg></span>' : ''}
                         <span class="preview-track-title-text">${escapeHtml(t.title)}</span>
                         ${t.is_explicit ? '<span class="explicit-badge inline-badge">E</span>' : ''}
                     </div>
@@ -880,6 +999,15 @@
         _activeJobId = null;
         previewCard.style.removeProperty('--preview-bg');
         clearStatus();
+
+        // Clean up animated artwork HLS player
+        if (previewCard._hlsInstance) {
+            previewCard._hlsInstance.destroy();
+            previewCard._hlsInstance = null;
+        }
+        const existingVideo = previewCard.querySelector('.preview-artwork-video');
+        if (existingVideo) existingVideo.remove();
+        previewArtwork.style.display = '';
 
         // Re-enable input bar
         urlInput.disabled = false;

@@ -1131,44 +1131,6 @@ a:hover {
         max-width: 100%;
     }
 
-    .preview-header {
-        gap: 12px;
-        padding: 14px;
-    }
-
-    .preview-artwork {
-        width: 80px;
-        height: 80px;
-    }
-
-    .preview-title {
-        font-size: 1rem;
-    }
-
-    .preview-artist {
-        font-size: 0.8rem;
-    }
-
-    .preview-genre {
-        font-size: 0.7rem;
-    }
-
-    .preview-download-btn {
-        width: 36px;
-        height: 36px;
-        font-size: 1rem;
-        top: 14px;
-        right: 14px;
-    }
-
-    .preview-track-item {
-        padding: 8px 14px;
-    }
-
-    .preview-footer {
-        padding: 12px 14px;
-        font-size: 0.7rem;
-    }
 }
 
 
@@ -1227,20 +1189,21 @@ a:hover {
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(
-        90deg,
-        transparent 0%,
-        rgba(255, 255, 255, 0.08) 50%,
-        transparent 100%
-    );
+    background: linear-gradient(90deg,
+            transparent 0%,
+            rgba(255, 255, 255, 0.08) 50%,
+            transparent 100%);
     animation: progressShimmer 2s ease-in-out infinite;
 }
 
 @keyframes progressPulse {
-    0%, 100% {
+
+    0%,
+    100% {
         box-shadow: 0 0 6px var(--accent-glow);
         opacity: 1;
     }
+
     50% {
         box-shadow: 0 0 14px var(--accent-glow), 0 0 22px rgba(255, 55, 95, 0.3);
         opacity: 0.85;
@@ -1251,6 +1214,7 @@ a:hover {
     0% {
         left: -100%;
     }
+
     100% {
         left: 100%;
     }
@@ -1343,9 +1307,13 @@ a:hover {
     background: linear-gradient(180deg, var(--preview-bg, rgba(100, 100, 100, 0.3)) 0%, transparent 100%);
 }
 
+.preview-artwork-wrapper {
+    flex-shrink: 0;
+}
+
 .preview-artwork {
-    width: 100px;
-    height: 100px;
+    width: 130px;
+    height: 130px;
     border-radius: var(--radius-md);
     object-fit: cover;
     flex-shrink: 0;
@@ -1359,6 +1327,7 @@ a:hover {
     flex-direction: column;
     gap: 2px;
     padding-top: 4px;
+    padding-right: 50px;
 }
 
 .preview-title {
@@ -1370,6 +1339,7 @@ a:hover {
     text-overflow: ellipsis;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
 }
 
@@ -1447,23 +1417,45 @@ a:hover {
     transition: all var(--transition-fast);
     -webkit-tap-highlight-color: transparent;
     box-shadow: 0 2px 12px var(--accent-glow);
-    align-self: center;
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
 }
 
 .preview-download-btn:hover {
-    transform: scale(1.1);
+    transform: translateY(-50%) scale(1.1);
     box-shadow: 0 4px 20px var(--accent-glow), var(--shadow-glow);
 }
 
 .preview-download-btn:active {
-    transform: scale(0.95);
+    transform: translateY(-50%) scale(0.95);
 }
 
 .preview-download-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-    transform: none;
+    transform: translateY(-50%);
     box-shadow: none;
+}
+
+/* Format badges (Dolby Atmos, Lossless) */
+.format-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--text-muted);
+}
+
+.format-badge-icon {
+    height: 12px;
+    width: auto;
+    fill: currentColor;
+    vertical-align: middle;
+}
+
+.format-badge-icon.lossless-icon {
+    height: 10px;
 }
 
 /* Track list */
@@ -1513,6 +1505,25 @@ a:hover {
     color: var(--text-primary);
 }
 
+.video-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 20px;
+    height: 16px;
+    background: rgba(255, 60, 60, 0.15);
+    border: 1px solid rgba(255, 60, 60, 0.35);
+    border-radius: 3px;
+    padding: 1px 2px;
+}
+
+.video-badge svg {
+    width: 14px;
+    height: 12px;
+    fill: #ff5c5c;
+}
+
 .preview-track-title-text {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1541,4 +1552,100 @@ a:hover {
     font-size: 0.73rem;
     color: var(--text-muted);
     line-height: 1.6;
+}
+
+/* ── Mobile Preview Overrides ────────────────────────────────────────────── */
+@media (max-width: 480px) {
+    .preview-header {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 10px;
+        padding: 24px 20px;
+    }
+
+    .preview-artwork-wrapper {
+        position: relative;
+        width: 100%;
+        max-width: none;
+        margin: 0;
+    }
+
+    .preview-artwork {
+        width: 100%;
+        height: auto;
+        aspect-ratio: 1 / 1;
+        max-width: none;
+        max-height: none;
+        margin: 0;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+        border-radius: var(--radius-lg);
+    }
+
+    .preview-meta {
+        align-items: center;
+        width: 100%;
+        gap: 3px;
+        padding-right: 0;
+    }
+
+    .preview-badges {
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 8px;
+    }
+
+    .preview-title {
+        font-size: 1.2rem;
+        text-align: center;
+    }
+
+    .preview-artist {
+        font-size: 1rem;
+        margin-bottom: 4px;
+    }
+
+    .preview-download-btn {
+        position: absolute;
+        top: auto;
+        bottom: 16px;
+        right: 16px;
+        transform: none;
+        margin: 0;
+        width: 48px;
+        height: 48px;
+        background: rgba(255, 255, 255, 0.15);
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        color: #a1a1a1;
+    }
+
+    .preview-download-btn:hover {
+        transform: scale(1.1);
+        background: rgba(255, 255, 255, 0.25);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .preview-download-btn:active {
+        transform: scale(0.95);
+    }
+
+    .preview-download-btn:disabled {
+        transform: none;
+    }
+
+    .preview-genre {
+        font-size: 0.7rem;
+    }
+
+    .preview-track-item {
+        padding: 8px 14px;
+    }
+
+    .preview-footer {
+        padding: 12px 14px;
+        font-size: 0.7rem;
+    }
 }
