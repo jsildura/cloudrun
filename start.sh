@@ -23,6 +23,13 @@ else
     echo "[1/2] Wrapper binary not found — skipping"
 fi
 
+# Start auto-cleanup for old download temp files (every 30 minutes, deletes files older than 1 hour)
+echo "[2/2] Starting auto-cleanup (removing /tmp/gamdl_* older than 1 hour, every 30 min)..."
+(while true; do
+    find /tmp -maxdepth 1 -type d -name 'gamdl_*' -mmin +60 -exec rm -rf {} + 2>/dev/null
+    sleep 1800
+done) &
+
 # Start the FastAPI backend
-echo "[2/2] Starting Gamdl Backend on port ${PORT:-8000}..."
+echo "[3/3] Starting Gamdl Backend on port ${PORT:-8000}..."
 exec uvicorn server.main:app --host 0.0.0.0 --port "${PORT:-8000}" --workers 1

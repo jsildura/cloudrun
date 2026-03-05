@@ -536,3 +536,34 @@ async def save_track_cover(job_id: str, track_index: int, request: Request):
         media_type="application/octet-stream",
         headers={"X-Filename": file_path.name},
     )
+
+
+@router.get("/save/{job_id}/animated-artwork/{index}")
+async def save_animated_artwork(job_id: str, index: int, request: Request):
+    """Serve an animated artwork MP4 file for a completed job."""
+    _check_rate_limit(request)
+    token = _extract_token(request)
+    dm = _get_user_dm(token)
+
+    job = dm.jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if index < 0 or index >= len(job.animated_artwork_paths):
+        raise HTTPException(status_code=404, detail="Animated artwork not found")
+
+    file_path = Path(job.animated_artwork_paths[index])
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Animated artwork file not found on disk")
+
+    def file_iterator():
+        with open(file_path, "rb") as f:
+            while chunk := f.read(65536):
+                yield chunk
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        file_iterator(),
+        media_type="video/mp4",
+        headers={"X-Filename": file_path.name},
+    )

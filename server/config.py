@@ -28,6 +28,7 @@ class ServerConfig:
     wvd_path: str | None = None
     overwrite: bool = False
     save_cover: bool = False
+    save_animated_artwork: bool = False
     save_playlist: bool = False
     cover_format: str = "jpg"
     cover_size: int = 1200

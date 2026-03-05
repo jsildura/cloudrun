@@ -635,7 +635,18 @@ class DownloadManager:
 
                 await self._broadcast_job(job)
 
-            # 5. Mark job done
+            # 5. Download animated artwork (MP4) for albums/playlists
+            if (
+                config.save_animated_artwork
+                and job.stage != DownloadStage.CANCELLED
+                and url_info
+            ):
+                try:
+                    await self._download_animated_artwork(job, url_info, config)
+                except Exception as e:
+                    logger.warning(f"Animated artwork download failed: {e}")
+
+            # 6. Mark job done
             if job.stage != DownloadStage.CANCELLED:
                 all_done = all(
                     t.stage in (DownloadStage.DONE, DownloadStage.ERROR)
@@ -665,6 +676,130 @@ class DownloadManager:
             return False
         job.stage = DownloadStage.CANCELLED
         return True
+
+    async def _download_animated_artwork(
+        self, job: DownloadJob, url_info, config: ServerConfig
+    ) -> None:
+        """Download animated artwork (MP4) for albums/playlists if available."""
+        from gamdl.downloader.constants import (
+            ALBUM_MEDIA_TYPE,
+            PLAYLIST_MEDIA_TYPE,
+        )
+
+        url_type = url_info.type or url_info.library_type
+        media_id = url_info.sub_id or url_info.id or url_info.library_id
+
+        # Only for albums and playlists
+        if url_type not in ALBUM_MEDIA_TYPE and url_type not in PLAYLIST_MEDIA_TYPE:
+            return
+
+        # Skip library albums/playlists (they don't have editorialVideo)
+        if url_info.library_id:
+            return
+
+        if not self._apple_music_api:
+            return
+
+        # Fetch metadata with editorialVideo
+        api = self._apple_music_api
+        if url_type in ALBUM_MEDIA_TYPE:
+            response = await api.get_album(media_id, extend="extendedAssetUrls,editorialVideo")
+        else:
+            response = await api.get_playlist(media_id, extend="extendedAssetUrls,editorialVideo")
+
+        if not response or not response.get("data"):
+            return
+
+        attrs = response["data"][0].get("attributes", {})
+        editorial_video = attrs.get("editorialVideo", {})
+        if not editorial_video:
+            logger.info("No animated artwork available for this %s", url_type)
+            return
+
+        # Collect HLS stream URLs for each variant
+        variants = {
+            "animated_cover_square": ("motionSquareVideo1x1", "motionDetailSquare"),
+            "animated_cover_tall": ("motionTallVideo3x4", "motionDetailTall"),
+        }
+
+        hls_urls = {}  # name -> m3u8 url
+        for name, keys in variants.items():
+            for key in keys:
+                vid = editorial_video.get(key, {})
+                if vid.get("video"):
+                    hls_urls[name] = vid["video"]
+                    break
+
+        if not hls_urls:
+            logger.info("editorialVideo present but no usable HLS streams found")
+            return
+
+        # Determine output directory from the first successfully downloaded track
+        output_dir = None
+        for track in job.tracks:
+            if track.file_path:
+                output_dir = Path(track.file_path).parent
+                break
+
+        if not output_dir:
+            # Fallback to temp dir
+            output_dir = Path(tempfile.gettempdir())
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Download each variant using ffmpeg
+        for name, m3u8_url in hls_urls.items():
+            out_path = output_dir / f"{name}.mp4"
+            logger.info("Downloading animated artwork: %s -> %s", name, out_path)
+
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    config.ffmpeg_path,
+                    "-y",
+                    "-i", m3u8_url,
+                    "-c", "copy",
+                    "-bsf:a", "aac_adtstoasc",
+                    "-movflags", "+faststart",
+                    str(out_path),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await proc.communicate()
+
+                if proc.returncode != 0:
+                    logger.warning(
+                        "ffmpeg failed for %s (exit %d): %s",
+                        name, proc.returncode, stderr.decode()[:500],
+                    )
+                    continue
+
+                if out_path.exists() and out_path.stat().st_size > 0:
+                    job.animated_artwork_paths.append(str(out_path))
+                    logger.info("Animated artwork saved: %s (%d bytes)", out_path, out_path.stat().st_size)
+
+                    # Cloud mode: upload to R2
+                    if config.cloud_mode and self._storage and self._current_token:
+                        object_key = self._storage.object_key(
+                            user_token=self._current_token,
+                            job_id=job.job_id,
+                            filename=out_path.name,
+                        )
+                        self._storage.upload_file(str(out_path), object_key)
+                        job.animated_artwork_urls.append(
+                            self._storage.get_signed_url(object_key)
+                        )
+                        out_path.unlink(missing_ok=True)
+                else:
+                    logger.warning("ffmpeg produced empty file for %s", name)
+
+            except FileNotFoundError:
+                logger.warning("ffmpeg not found at '%s', skipping animated artwork", config.ffmpeg_path)
+                return
+            except Exception as e:
+                logger.warning("Failed to download animated artwork %s: %s", name, e)
+
+        if job.animated_artwork_paths or job.animated_artwork_urls:
+            await self._broadcast_job(job)
 
     async def retry_track(
         self, job_id: str, track_index: int, config: ServerConfig

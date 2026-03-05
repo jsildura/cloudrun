@@ -93,7 +93,10 @@
         if (status.authenticated && status.active_subscription) {
             badge.classList.add('connected');
             text.textContent = `Connected · ${status.storefront || 'Unknown'}`;
-            if (status.account_restrictions) {
+            // Only flag as restricted if explicit content is actually blocked
+            const r = status.account_restrictions;
+            const explicitBlocked = r && r.explicit && r.explicit.allowed === false;
+            if (explicitBlocked) {
                 badge.classList.add('restricted');
                 text.textContent += ' (restricted)';
             }
@@ -276,6 +279,7 @@
             'cfg-cover-format': 'cover_format',
             'cfg-cover-size': 'cover_size',
             'cfg-save-cover': 'save_cover',
+            'cfg-save-animated-artwork': 'save_animated_artwork',
             'cfg-overwrite': 'overwrite',
             'cfg-download-mode': 'download_mode',
             'cfg-remux-mode': 'remux_mode',
@@ -309,6 +313,7 @@
             cover_format: $('#cfg-cover-format').value,
             cover_size: parseInt($('#cfg-cover-size').value) || 1200,
             save_cover: $('#cfg-save-cover').checked,
+            save_animated_artwork: $('#cfg-save-animated-artwork').checked,
             overwrite: $('#cfg-overwrite').checked,
             download_mode: $('#cfg-download-mode').value,
             remux_mode: $('#cfg-remux-mode').value,
@@ -666,7 +671,7 @@
         if (totalFetches > 1) {
             // Track progress as each blob resolves
             let fetchedCount = 0;
-            updateFetchStatus(`Fetching ${fetchedCount}/${totalTracks} tracks\u2026`, 0);
+            updateFetchStatus(`Processing ${fetchedCount}/${totalTracks} tracks\u2026`, 0);
 
             const trackedPromises = allPromises.map(p =>
                 p.then(() => {
@@ -674,13 +679,13 @@
                     const pct = Math.round((fetchedCount / totalFetches) * 100);
                     // Show track count for audio, but total items count for the pct
                     const tracksFetched = Math.min(fetchedCount, totalTracks);
-                    updateFetchStatus(`Fetching ${tracksFetched}/${totalTracks} tracks\u2026`, pct);
+                    updateFetchStatus(`Processing ${tracksFetched}/${totalTracks} tracks\u2026`, pct);
                 })
             );
             await Promise.all(trackedPromises);
         } else {
             // Single file or no files — just wait without granular progress
-            if (totalFetches === 1) updateFetchStatus('Fetching track\u2026', 50);
+            if (totalFetches === 1) updateFetchStatus('Processing track\u2026', 50);
             await Promise.all(allPromises);
         }
 
@@ -697,7 +702,36 @@
         const coverEntries = _coverBlobs[job.job_id]
             ? Object.values(_coverBlobs[job.job_id])
             : [];
-        const allEntries = [...entries, ...lyricsEntries, ...coverEntries];
+
+        // Fetch animated artwork MP4s if available
+        const animatedArtworkEntries = [];
+        const artPaths = job.animated_artwork_paths || [];
+        const artUrls = job.animated_artwork_urls || [];
+        for (let i = 0; i < Math.max(artPaths.length, artUrls.length); i++) {
+            try {
+                let resp;
+                if (artUrls[i]) {
+                    // Cloud mode: fetch from signed R2 URL
+                    resp = await fetch(artUrls[i]);
+                } else {
+                    // Local mode: fetch from API
+                    const token = AuthStorage.getToken();
+                    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+                    resp = await fetch(`/api/save/${job.job_id}/animated-artwork/${i}`, { headers });
+                }
+                if (resp.ok) {
+                    const filename = resp.headers.get('X-Filename') || `animated_cover_${i}.mp4`;
+                    const blob = await resp.blob();
+                    if (blob && blob.size > 0) {
+                        animatedArtworkEntries.push({ blob, filename });
+                    }
+                }
+            } catch (err) {
+                console.warn(`[App] Animated artwork fetch failed for index ${i}:`, err);
+            }
+        }
+
+        const allEntries = [...entries, ...lyricsEntries, ...coverEntries, ...animatedArtworkEntries];
 
         let finalBlob, finalFilename;
 

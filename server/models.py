@@ -58,6 +58,8 @@ class DownloadJob(BaseModel):
     current_track: int = 0
     total_tracks: int = 0
     error_message: str | None = None
+    animated_artwork_paths: list[str] = []
+    animated_artwork_urls: list[str] = []
 
 
 # ── Preview ──────────────────────────────────────────────────────────────────
@@ -99,6 +101,7 @@ class ConfigUpdate(BaseModel):
     wvd_path: str | None = None
     overwrite: bool | None = None
     save_cover: bool | None = None
+    save_animated_artwork: bool | None = None
     save_playlist: bool | None = None
     cover_format: str | None = None
     cover_size: int | None = None
