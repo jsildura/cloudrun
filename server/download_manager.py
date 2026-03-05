@@ -52,6 +52,7 @@ class DownloadManager:
         self.jobs: dict[str, DownloadJob] = {}
         self._job_configs: dict[str, ServerConfig] = {}
         self._job_temp_dirs: dict[str, str] = {}  # job_id -> temp dir path
+        self._job_tasks: dict[str, asyncio.Task] = {}  # job_id -> asyncio.Task
         self._ws_clients: set[asyncio.Queue] = set()
         self._apple_music_api: AppleMusicApi | None = None
         self._itunes_api: ItunesApi | None = None
@@ -448,8 +449,9 @@ class DownloadManager:
         self._job_configs[job_id] = config
         await self._broadcast({"type": "job_created", "data": job.model_dump()})
 
-        # Start processing in the background
-        asyncio.create_task(self._process_job(job_id, url, config))
+        # Start processing in the background and track the task
+        task = asyncio.create_task(self._process_job(job_id, url, config))
+        self._job_tasks[job_id] = task
         return job
 
     async def _process_job(
@@ -661,6 +663,10 @@ class DownloadManager:
                         job.error_message = "Completed with errors"
             await self._broadcast_job(job)
 
+        except asyncio.CancelledError:
+            job.stage = DownloadStage.CANCELLED
+            logger.info(f"Job {job_id} cancelled")
+            await self._broadcast_job(job)
         except Exception as e:
             job.stage = DownloadStage.ERROR
             job.error_message = str(e)
@@ -675,6 +681,10 @@ class DownloadManager:
         if job.stage in (DownloadStage.DONE, DownloadStage.ERROR, DownloadStage.CANCELLED):
             return False
         job.stage = DownloadStage.CANCELLED
+        # Cancel the async task for immediate interruption
+        task = self._job_tasks.get(job_id)
+        if task and not task.done():
+            task.cancel()
         return True
 
     async def _download_animated_artwork(

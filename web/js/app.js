@@ -1134,8 +1134,15 @@
             progressBar = `<div class="status-progress-bar${processingClass}"><div class="status-progress-fill" style="width:${progressPct}%"></div></div>`;
         }
 
+        // Build cancel link for active stages
+        const isCancellable = ['queued', 'parsing', 'preparing', 'downloading'].includes(stage);
+        const cancelHtml = isCancellable
+            ? '<span class="status-cancel-text" id="status-cancel-text">Cancel</span>'
+            : '';
+
         const html = `<span class="status-text">${escapeHtml(headerText)}</span>`
             + progressBar
+            + cancelHtml
             + (trackLines ? `<div class="status-track-list">${trackLines}</div>` : '');
         setStatus(html);
 
@@ -1194,6 +1201,8 @@
         if (!_previewUrl) return;
 
         previewDownloadBtn.disabled = true;
+        urlInput.disabled = true;
+        btnSubmit.disabled = true;
         setStatusText('Starting download...');
 
         try {
@@ -1206,7 +1215,24 @@
         } catch (e) {
             toast(e.message || 'Download failed', 'error');
             previewDownloadBtn.disabled = false;
+            urlInput.disabled = false;
+            btnSubmit.disabled = false;
             clearStatus();
+        }
+    });
+
+    // Cancel text — delegated click handler on status container
+    statusContainer.addEventListener('click', async (e) => {
+        const cancelEl = e.target.closest('.status-cancel-text');
+        if (!cancelEl || !_activeJobId) return;
+
+        cancelEl.style.pointerEvents = 'none';
+        cancelEl.style.opacity = '0.4';
+        try {
+            await api.cancelDownload(_activeJobId);
+            toast('Download cancelled', 'info');
+        } catch (err) {
+            toast(err.message || 'Cancel failed', 'error');
         }
     });
 

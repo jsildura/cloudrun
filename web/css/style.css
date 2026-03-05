@@ -724,6 +724,7 @@ a:hover {
 .field-row {
     display: flex;
     gap: 20px;
+    align-items: center;
     flex-wrap: wrap;
     margin-bottom: 14px;
 }
@@ -1437,6 +1438,20 @@ a:hover {
     cursor: not-allowed;
     transform: translateY(-50%);
     box-shadow: none;
+}
+
+.status-cancel-text {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: #eb5871;
+    cursor: pointer;
+    transition: opacity var(--transition-fast);
+    -webkit-tap-highlight-color: transparent;
+}
+
+.status-cancel-text:hover {
+    opacity: 0.7;
+    text-decoration: underline;
 }
 
 /* Format badges (Dolby Atmos, Lossless) */
