@@ -230,10 +230,17 @@ a:hover {
     align-items: stretch;
 }
 
-.url-input {
+.url-input-inner {
     flex: 1;
-    height: 52px;
-    padding: 0 18px;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.url-input {
+    width: 100%;
+    height: 42px;
+    padding: 0 42px 0 18px;
     background: var(--bg-input);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
@@ -260,7 +267,7 @@ a:hover {
 }
 
 .btn-download {
-    height: 52px;
+    height: 42px;
     padding: 0 28px;
     background: var(--accent-gradient);
     border: none;
@@ -298,6 +305,40 @@ a:hover {
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
+    pointer-events: none;
+}
+
+/* ── Paste Button ──────────────────────────────────────────────────────────── */
+.btn-paste {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    -webkit-tap-highlight-color: transparent;
+    z-index: 1;
+}
+
+.btn-paste:hover {
+    color: var(--text-primary);
+}
+
+.btn-paste:active {
+    transform: translateY(-50%) scale(0.9);
+}
+
+.btn-paste:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
     pointer-events: none;
 }
 
@@ -1095,7 +1136,7 @@ a:hover {
     .url-input {
         width: 100%;
         height: 60px;
-        padding: 16px 18px;
+        padding: 0 42px 0 18px;
         font-size: 1rem;
     }
 

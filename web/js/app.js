@@ -1025,6 +1025,7 @@
         // Gray out input bar while preview is active
         urlInput.disabled = true;
         btnSubmit.disabled = true;
+        if (btnPaste) btnPaste.disabled = true;
     }
 
     function hidePreview() {
@@ -1046,6 +1047,7 @@
         // Re-enable input bar
         urlInput.disabled = false;
         btnSubmit.disabled = false;
+        if (btnPaste) btnPaste.disabled = false;
     }
 
     function setStatus(html) {
@@ -1154,6 +1156,7 @@
             // Re-enable input bar
             urlInput.disabled = false;
             btnSubmit.disabled = false;
+            if (btnPaste) btnPaste.disabled = false;
         }
     }
 
@@ -1167,6 +1170,26 @@
         }
     });
 
+    // Paste button — read clipboard and validate Apple Music URL
+    const btnPaste = $('#btn-paste');
+    if (btnPaste) {
+        btnPaste.addEventListener('click', async () => {
+            try {
+                const text = (await navigator.clipboard.readText()).trim();
+                const appleMusicPattern = /^https?:\/\/music\.apple\.com\/.+\/(album|song|playlist|music-video|post)\//i;
+                if (appleMusicPattern.test(text)) {
+                    urlInput.value = text;
+                    urlInput.dispatchEvent(new Event('input'));
+                    urlInput.focus();
+                } else {
+                    toast('Clipboard does not contain an Apple Music URL', 'error');
+                }
+            } catch (err) {
+                toast('Unable to read clipboard', 'error');
+            }
+        });
+    }
+
     urlForm.addEventListener('submit', async (e) => {
         e.preventDefault();
 
@@ -1175,6 +1198,7 @@
 
         isSubmitting = true;
         btnSubmit.disabled = true;
+        if (btnPaste) btnPaste.disabled = true;
         btnSubmit.textContent = 'Loading…';
         setStatusText('Loading...');
 
@@ -1191,8 +1215,9 @@
             if (!previewSection.classList.contains('visible')) {
                 btnSubmit.disabled = false;
                 urlInput.disabled = false;
+                if (btnPaste) btnPaste.disabled = false;
             }
-            btnSubmit.textContent = 'Download';
+            btnSubmit.textContent = 'Preview';
         }
     });
 
@@ -1203,6 +1228,7 @@
         previewDownloadBtn.disabled = true;
         urlInput.disabled = true;
         btnSubmit.disabled = true;
+        if (btnPaste) btnPaste.disabled = true;
         setStatusText('Starting download...');
 
         try {

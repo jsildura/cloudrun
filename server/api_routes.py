@@ -317,7 +317,7 @@ async def wrapper_restart() -> dict:
             urllib.request.urlopen(req, timeout=3)
             return {"success": True, "message": "Wrapper restarted successfully"}
         except Exception:
-            return {"success": False, "message": "Wrapper started but not responding yet, try again in a few seconds"}
+            return {"success": False, "message": "Wrapper started but not responding yet, try to refresh the page"}
 
     result = await asyncio.get_event_loop().run_in_executor(None, _do_restart)
     return result
