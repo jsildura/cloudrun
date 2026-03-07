@@ -1404,8 +1404,8 @@ a:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     font-size: 0.6rem;
     font-weight: 700;
     color: var(--text-muted);
@@ -1435,7 +1435,7 @@ a:hover {
 }
 
 .dolby-badge svg {
-    height: 14px;
+    height: 10px;
     width: auto;
     fill: currentColor;
     display: block;
