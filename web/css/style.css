@@ -1423,6 +1423,31 @@ a:hover {
     top: -1px;
 }
 
+/* Dolby Atmos & Lossless inline badges (track list) */
+.dolby-badge,
+.lossless-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 16px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.dolby-badge svg {
+    height: 14px;
+    width: auto;
+    fill: currentColor;
+    display: block;
+}
+
+.lossless-badge svg {
+    height: 10px;
+    width: auto;
+    fill: currentColor;
+    display: block;
+}
+
 .preview-badges {
     display: flex;
     align-items: center;

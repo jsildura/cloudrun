@@ -66,6 +66,36 @@ def _get_current_config() -> ServerConfig:
     return load_config()
 
 
+def _merge_user_config(base: ServerConfig, overrides: ConfigUpdate | None) -> ServerConfig:
+    """Apply per-user config overrides on top of the server base config.
+
+    Only the fields that the frontend UI actually controls are applied.
+    Server-infrastructure fields (paths, cloud mode, wrapper URLs, templates,
+    tool paths) are never overridden — they always come from the server.
+    """
+    if overrides is None:
+        return base
+
+    # Only allow user-facing preference fields to be overridden.
+    # This prevents a malicious or buggy client from changing paths,
+    # cloud settings, or tool binaries.
+    ALLOWED_USER_FIELDS = {
+        "song_codec", "synced_lyrics_format", "no_synced_lyrics",
+        "synced_lyrics_only", "save_synced_lyrics", "music_video_resolution",
+        "exclude_videos", "cover_format", "cover_size", "save_cover",
+        "save_animated_artwork", "overwrite", "download_mode", "remux_mode",
+        "language", "use_wrapper", "rate_limit_delay",
+    }
+
+    from dataclasses import replace
+    update_data = overrides.model_dump(exclude_none=True)
+    safe_updates = {k: v for k, v in update_data.items() if k in ALLOWED_USER_FIELDS}
+
+    if safe_updates:
+        base = replace(base, **safe_updates)
+    return base
+
+
 def _check_rate_limit(request: Request) -> None:
     """Enforce per-IP rate limiting."""
     ip = request.client.host if request.client else "unknown"
@@ -140,7 +170,7 @@ async def preview_url(req: DownloadRequest, request: Request) -> PreviewResponse
     _check_rate_limit(request)
     token = _extract_token(request)
     dm = _get_user_dm(token)
-    cfg = _get_current_config()
+    cfg = _merge_user_config(_get_current_config(), req.config)
 
     if not dm.is_authenticated:
         raise HTTPException(status_code=401, detail="Not authenticated. Connect auth first.")
@@ -163,7 +193,7 @@ async def start_download(req: DownloadRequest, request: Request) -> DownloadJob:
     _check_rate_limit(request)
     token = _extract_token(request)
     dm = _get_user_dm(token)
-    cfg = _get_current_config()
+    cfg = _merge_user_config(_get_current_config(), req.config)
 
     if not dm.is_authenticated:
         raise HTTPException(status_code=401, detail="Not authenticated. Connect auth first.")
@@ -266,6 +296,10 @@ async def wrapper_status() -> dict:
     return {"available": available}
 
 
+_last_wrapper_restart: float = 0.0
+_WRAPPER_RESTART_COOLDOWN = 300  # 5 minutes
+
+
 @router.post("/wrapper/restart")
 async def wrapper_restart() -> dict:
     """Kill existing Wrapper process and start a new one."""
@@ -273,6 +307,13 @@ async def wrapper_restart() -> dict:
     import subprocess
     import urllib.request
     import urllib.error
+
+    global _last_wrapper_restart
+    now = time.time()
+    if now - _last_wrapper_restart < _WRAPPER_RESTART_COOLDOWN:
+        remaining = int(_WRAPPER_RESTART_COOLDOWN - (now - _last_wrapper_restart))
+        return {"success": False, "message": f"Please wait {remaining}s before restarting again"}
+    _last_wrapper_restart = now
 
     wrapper_bin = "/app/Wrapper/wrapper"
 
@@ -317,7 +358,7 @@ async def wrapper_restart() -> dict:
             urllib.request.urlopen(req, timeout=3)
             return {"success": True, "message": "Wrapper restarted successfully"}
         except Exception:
-            return {"success": False, "message": "Wrapper started but not responding yet, try to refresh the page"}
+            return {"success": False, "message": "Wrapper successfully started, please refresh the page"}
 
     result = await asyncio.get_event_loop().run_in_executor(None, _do_restart)
     return result

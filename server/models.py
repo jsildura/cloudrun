@@ -21,6 +21,7 @@ class AuthStatus(BaseModel):
 
 class DownloadRequest(BaseModel):
     url: str = Field(..., description="Apple Music URL to download")
+    config: "ConfigUpdate | None" = Field(None, description="Optional per-user config overrides")
 
 
 class DownloadStage(str, Enum):
@@ -71,6 +72,8 @@ class PreviewTrack(BaseModel):
     duration_ms: int = 0
     is_explicit: bool = False
     is_video: bool = False
+    has_dolby_atmos: bool = False
+    is_lossless: bool = False
 
 class PreviewResponse(BaseModel):
     url: str

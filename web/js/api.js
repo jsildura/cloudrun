@@ -54,17 +54,21 @@ class GamdlApi {
 
     // ── Downloads ─────────────────────────────────────────────────────────
 
-    async startDownload(url) {
+    async startDownload(url, config = null) {
+        const body = { url };
+        if (config) body.config = config;
         return this._fetch('/api/download', {
             method: 'POST',
-            body: JSON.stringify({ url }),
+            body: JSON.stringify(body),
         });
     }
 
-    async previewUrl(url) {
+    async previewUrl(url, config = null) {
+        const body = { url };
+        if (config) body.config = config;
         return this._fetch('/api/preview', {
             method: 'POST',
-            body: JSON.stringify({ url }),
+            body: JSON.stringify(body),
         });
     }
 

@@ -384,12 +384,15 @@ class DownloadManager:
             # Single song — one track
             duration = attrs.get("durationInMillis", 0)
             total_duration_ms = duration
+            song_audio_traits = attrs.get("audioTraits", [])
             tracks.append(PreviewTrack(
                 track_number=1,
                 title=attrs.get("name", "Unknown"),
                 artist=attrs.get("artistName", "Unknown"),
                 duration_ms=duration,
                 is_explicit=attrs.get("contentRating", "") == "explicit",
+                has_dolby_atmos="atmos" in song_audio_traits,
+                is_lossless="lossless" in song_audio_traits or "hi-res-lossless" in song_audio_traits,
             ))
         else:
             # Album or playlist — extract tracks from relationships
@@ -406,6 +409,7 @@ class DownloadManager:
                 t_attrs = track.get("attributes", {})
                 duration = t_attrs.get("durationInMillis", 0)
                 total_duration_ms += duration
+                t_audio_traits = t_attrs.get("audioTraits", [])
                 tracks.append(PreviewTrack(
                     track_number=i + 1,
                     title=t_attrs.get("name", "Unknown"),
@@ -413,6 +417,8 @@ class DownloadManager:
                     duration_ms=duration,
                     is_explicit=t_attrs.get("contentRating", "") == "explicit",
                     is_video=track.get("type") == "music-videos",
+                    has_dolby_atmos="atmos" in t_audio_traits,
+                    is_lossless="lossless" in t_audio_traits or "hi-res-lossless" in t_audio_traits,
                 ))
 
         response = PreviewResponse(

@@ -64,6 +64,59 @@
     const _savedJobs = new Set(); // Jobs that already triggered auto-save
     const _activeJobs = new Set(); // Jobs started in THIS browser session (not replayed)
 
+    // ── LocalStorage settings ────────────────────────────────────────────
+    const SETTINGS_KEY = 'gamdl_user_settings';
+
+    // Default user preferences (matches the user's requested defaults)
+    const DEFAULT_SETTINGS = {
+        song_codec: 'aac-legacy',
+        synced_lyrics_format: 'lrc',
+        no_synced_lyrics: false,
+        synced_lyrics_only: false,
+        save_synced_lyrics: true,
+        music_video_resolution: '720p',
+        exclude_videos: false,
+        cover_format: 'png',
+        cover_size: 1200,
+        save_cover: true,
+        save_animated_artwork: false,
+        overwrite: false,
+        download_mode: 'ytdlp',
+        remux_mode: 'ffmpeg',
+        language: 'en-US',
+        use_wrapper: false,
+        rate_limit_delay: 7,
+    };
+
+    /**
+     * Load settings from localStorage, falling back to defaults.
+     * Returns a plain object with all user preference keys.
+     */
+    function loadLocalSettings() {
+        try {
+            const raw = localStorage.getItem(SETTINGS_KEY);
+            if (raw) {
+                const saved = JSON.parse(raw);
+                // Merge saved on top of defaults so new keys get defaults
+                return { ...DEFAULT_SETTINGS, ...saved };
+            }
+        } catch (e) {
+            console.warn('[Settings] Failed to load from localStorage:', e);
+        }
+        return { ...DEFAULT_SETTINGS };
+    }
+
+    /**
+     * Save settings to localStorage.
+     */
+    function saveLocalSettings(cfg) {
+        try {
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(cfg));
+        } catch (e) {
+            console.warn('[Settings] Failed to save to localStorage:', e);
+        }
+    }
+
 
     // ── Toast ─────────────────────────────────────────────────────────────
 
@@ -192,12 +245,9 @@
     // ── Settings ──────────────────────────────────────────────────────────
 
     async function loadSettings() {
-        try {
-            const cfg = await api.getConfig();
-            setConfigFields(cfg);
-        } catch (e) {
-            console.error('Failed to load config:', e);
-        }
+        // Load from localStorage (no server call needed for user preferences)
+        const cfg = loadLocalSettings();
+        setConfigFields(cfg);
         // Check wrapper availability (non-blocking)
         checkWrapperStatus();
     }
@@ -250,7 +300,21 @@
         try {
             const result = await api.restartWrapper();
             if (result.success) {
-                toast('Wrapper restarted successfully', 'success');
+                toast('Wrapper successfully started, please refresh the page', 'success');
+                // Hide button immediately to prevent repeated restarts
+                restartBtn.style.display = 'none';
+                restartBtn.disabled = false;
+                restartBtn.classList.remove('restarting');
+                restartBtn.innerHTML = originalHTML;
+                return;
+            } else if (result.message && result.message.includes('successfully started')) {
+                // Wrapper process started but not yet responding — still hide button
+                toast(result.message, 'success');
+                restartBtn.style.display = 'none';
+                restartBtn.disabled = false;
+                restartBtn.classList.remove('restarting');
+                restartBtn.innerHTML = originalHTML;
+                return;
             } else {
                 toast(result.message || 'Failed to restart wrapper', 'error');
             }
@@ -258,7 +322,7 @@
             toast('Failed to restart wrapper: ' + e.message, 'error');
         }
 
-        // Re-check status
+        // Only re-check on failure
         restartBtn.disabled = false;
         restartBtn.classList.remove('restarting');
         restartBtn.innerHTML = originalHTML;
@@ -1000,6 +1064,8 @@
                         ${t.is_video ? '<span class="video-badge" title="Music Video"><svg xmlns="http://www.w3.org/2000/svg" fill-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2" clip-rule="evenodd" viewBox="0 0 19 16" xml:space="preserve"><path fill-rule="nonzero" d="M16.747 12.437c1.166 0 1.753-.565 1.753-1.771V2.771C18.5 1.565 17.913 1 16.747 1H2.253C1.087 1 .5 1.565.5 2.771v7.895c0 1.206.587 1.771 1.753 1.771h14.494Zm-.02-1.109H2.273c-.47 0-.675-.193-.675-.675V2.791c0-.489.205-.682.675-.682h14.454c.47 0 .675.193.675.682v7.862c0 .482-.205.675-.675.675Zm-8.738-1.296c.976 0 1.637-.709 1.637-1.708V5.961c0-.255.055-.324.205-.359l1.603-.385c.327-.09.429-.159.429-.559v-1.35c0-.262-.095-.379-.457-.289l-1.991.503c-.341.082-.41.151-.41.558v3.107c0 .303-.027.358-.375.455l-.627.165c-.621.165-1.139.537-1.139 1.213 0 .585.436 1.012 1.125 1.012ZM13.828 15a.636.636 0 0 0 .627-.648.636.636 0 0 0-.627-.647H5.159a.642.642 0 0 0-.635.647c0 .359.287.648.635.648h8.669Z"></path></svg></span>' : ''}
                         <span class="preview-track-title-text">${escapeHtml(t.title)}</span>
                         ${t.is_explicit ? '<span class="explicit-badge inline-badge">E</span>' : ''}
+                        ${t.has_dolby_atmos ? '<span class="dolby-badge inline-badge" title="Dolby Atmos"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M24 20.352V3.648H0v16.704h24zM18.433 5.806h2.736v12.387h-2.736c-2.839 0-5.214-2.767-5.214-6.194s2.375-6.193 5.214-6.193zm-15.602 0h2.736c2.839 0 5.214 2.767 5.214 6.194s-2.374 6.194-5.214 6.194H2.831V5.806z"/></svg></span>' : ''}
+                        ${t.is_lossless ? '<span class="lossless-badge inline-badge" title="Lossless"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 15 9"><path fill="currentColor" d="M8.184,0.35C9.944,0.35 10.703,3.296 11.338,5.238C11.673,3.842 11.497,3.542 11.857,3.542C11.99,3.542 12.126,3.633 12.126,3.798C12.126,3.809 12.123,3.839 12.117,3.883L12.091,4.058C12.02,4.522 11.845,5.494 11.654,6.144C13.198,10.191 14.345,4.861 14.474,3.772C14.493,3.615 14.612,3.542 14.731,3.542C14.891,3.542 15.022,3.662 14.997,3.843C14.72,5.605 14.295,8.35 12.547,8.35C11.582,8.35 11.04,7.595 10.611,6.73C9.54,4.626 9.047,1.093 7.997,1.093C7.66,1.093 7.411,1.444 7.394,1.444C7.362,1.444 7.337,1.301 7.023,0.909C7.322,0.567 7.734,0.35 8.184,0.35ZM2.458,0.354C5.211,0.354 5.456,7.618 7.014,7.618C7.197,7.618 7.394,7.507 7.61,7.256C7.729,7.458 7.851,7.638 7.978,7.796C7.667,8.151 7.28,8.35 6.795,8.35C5.054,8.349 4.306,5.434 3.663,3.466C3.511,4.097 3.432,4.669 3.402,4.925C3.382,5.088 3.263,5.163 3.143,5.163C3.009,5.163 2.874,5.071 2.874,4.908L2.874,4.908L2.877,4.87C2.966,4.223 3.146,3.243 3.347,2.56C3.079,1.858 2.745,1.091 2.252,1.091C1.257,1.091 0.687,3.591 0.527,4.925C0.508,5.088 0.388,5.163 0.268,5.163C0.135,5.163 0,5.071 0,4.908C0,4.896 0.001,4.883 0.002,4.87C0.283,2.836 0.808,0.354 2.458,0.354ZM5.315,0.35C5.809,0.35 6.339,0.608 6.797,1.211C6.822,1.241 7.078,1.639 7.159,1.777C8.277,3.802 8.818,7.627 9.881,7.627C10.065,7.627 10.264,7.513 10.484,7.256C10.604,7.458 10.726,7.638 10.852,7.796C10.542,8.15 10.155,8.35 9.67,8.35C6.933,8.349 6.636,1.09 5.128,1.09C4.788,1.09 4.536,1.444 4.519,1.444C4.487,1.444 4.462,1.301 4.148,0.909C4.455,0.558 4.87,0.35 5.315,0.35Z"/></svg></span>' : ''}
                     </div>
                     ${data.media_type !== 'song' && t.artist !== data.artist
                 ? `<div class="preview-track-artist">${escapeHtml(t.artist)}</div>`
@@ -1203,7 +1269,8 @@
         setStatusText('Loading...');
 
         try {
-            const data = await api.previewUrl(url);
+            const userCfg = loadLocalSettings();
+            const data = await api.previewUrl(url, userCfg);
             clearStatus();
             showPreview(data);
         } catch (e) {
@@ -1232,7 +1299,8 @@
         setStatusText('Starting download...');
 
         try {
-            const job = await api.startDownload(_previewUrl);
+            const userCfg = loadLocalSettings();
+            const job = await api.startDownload(_previewUrl, userCfg);
             _activeJobs.add(job.job_id);
             _activeJobId = job.job_id;
             jobs[job.job_id] = job;
@@ -1300,13 +1368,25 @@
     btnSaveSettings.addEventListener('click', async () => {
         try {
             const cfg = getConfigFields();
-            await api.updateConfig(cfg);
+            saveLocalSettings(cfg);
             toast('Settings saved', 'success');
             closeModal('modal-settings');
         } catch (e) {
             toast(e.message || 'Failed to save settings', 'error');
         }
     });
+
+    // Restore defaults
+    const btnRestoreDefaults = $('#btn-restore-defaults');
+    if (btnRestoreDefaults) {
+        btnRestoreDefaults.addEventListener('click', () => {
+            // Reset form fields to defaults
+            setConfigFields(DEFAULT_SETTINGS);
+            // Save defaults to localStorage immediately
+            saveLocalSettings(DEFAULT_SETTINGS);
+            toast('Settings restored to defaults', 'info');
+        });
+    }
 
     // Cookie file upload — parse client-side, extract token, store in browser
     btnUploadCookie.addEventListener('click', () => {
