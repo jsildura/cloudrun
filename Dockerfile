@@ -31,7 +31,7 @@ RUN chmod +x Wrapper/wrapper 2>/dev/null || true
 # ── Install gamdl package ────────────────────────────────────────────────────
 COPY pyproject.toml .
 COPY gamdl/ gamdl/
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir . socksio
 
 # ── Install server dependencies ──────────────────────────────────────────────
 COPY server/requirements.txt server/
