@@ -616,13 +616,17 @@ class DownloadManager:
                         break
                     except GamdlError as e:
                         error_msg = str(e)
-                        if "429" in error_msg and attempt < max_retries:
-                            delay = retry_delays[attempt]
+                        # Retry on rate-limit (429) or transient connection errors
+                        is_rate_limit = "429" in error_msg
+                        is_conn_error = isinstance(e.__cause__, (ConnectionResetError, ConnectionError, TimeoutError, OSError))
+                        if (is_rate_limit or is_conn_error) and attempt < max_retries:
+                            delay = retry_delays[attempt] if is_rate_limit else [2, 5, 10][attempt]
+                            reason = "Rate limited" if is_rate_limit else "Connection error"
                             logger.warning(
-                                f"Rate limited on track {i+1}, retrying in {delay}s "
+                                f"{reason} on track {i+1}, retrying in {delay}s "
                                 f"(attempt {attempt+1}/{max_retries})"
                             )
-                            job.tracks[i].error_message = f"Rate limited, retrying in {delay}s..."
+                            job.tracks[i].error_message = f"{reason}, retrying in {delay}s..."
                             await self._broadcast_job(job)
                             await asyncio.sleep(delay)
                             job.tracks[i].error_message = None
@@ -633,13 +637,17 @@ class DownloadManager:
                         break
                     except Exception as e:
                         error_msg = str(e)
-                        if "429" in error_msg and attempt < max_retries:
-                            delay = retry_delays[attempt]
+                        # Retry on rate-limit (429) or transient connection errors
+                        is_rate_limit = "429" in error_msg
+                        is_conn_error = isinstance(e, (ConnectionResetError, ConnectionError, TimeoutError, OSError))
+                        if (is_rate_limit or is_conn_error) and attempt < max_retries:
+                            delay = retry_delays[attempt] if is_rate_limit else [2, 5, 10][attempt]
+                            reason = "Rate limited" if is_rate_limit else "Connection error"
                             logger.warning(
-                                f"Rate limited on track {i+1}, retrying in {delay}s "
+                                f"{reason} on track {i+1}, retrying in {delay}s "
                                 f"(attempt {attempt+1}/{max_retries})"
                             )
-                            job.tracks[i].error_message = f"Rate limited, retrying in {delay}s..."
+                            job.tracks[i].error_message = f"{reason}, retrying in {delay}s..."
                             await self._broadcast_job(job)
                             await asyncio.sleep(delay)
                             job.tracks[i].error_message = None
