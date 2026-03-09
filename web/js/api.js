@@ -128,6 +128,18 @@ class GamdlApi {
     getFileUrl(filePath) {
         return `${this.baseUrl}/api/files/${encodeURIComponent(filePath)}`;
     }
+
+    // ── System Stats ──────────────────────────────────────────────────────
+
+    async getSystemStats() {
+        try {
+            const res = await fetch(`${this.baseUrl}/api/system/stats`);
+            if (!res.ok) return null;
+            return res.json();
+        } catch {
+            return null;
+        }
+    }
 }
 
 // Global singleton

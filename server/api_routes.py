@@ -9,6 +9,9 @@ import hashlib
 import logging
 import time
 from collections import defaultdict
+
+import psutil
+psutil.cpu_percent()  # warm-up: first call always returns 0, prime for next calls
 from dataclasses import asdict
 from pathlib import Path
 
@@ -272,6 +275,23 @@ async def retry_all_failed(job_id: str, request: Request) -> dict:
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
+
+
+@router.get("/system/stats")
+async def system_stats(request: Request) -> dict:
+    """Return host CPU, RAM, and Swap usage. No auth required."""
+    _check_rate_limit(request)
+    vm = psutil.virtual_memory()
+    sw = psutil.swap_memory()
+    return {
+        "cpu_percent": psutil.cpu_percent(interval=0),
+        "ram_used_mb": round(vm.used / 1048576),
+        "ram_total_mb": round(vm.total / 1048576),
+        "ram_percent": vm.percent,
+        "swap_used_mb": round(sw.used / 1048576),
+        "swap_total_mb": round(sw.total / 1048576),
+        "swap_percent": sw.percent,
+    }
 
 
 @router.get("/wrapper/status")
