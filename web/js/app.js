@@ -890,15 +890,25 @@
                 }
             );
 
-            // Build ZIP filename: prefer preview title (playlist/album name),
-            // fall back to first track metadata
+            // Build ZIP filename: "Album - Artist.zip" for albums,
+            // "Playlist Name.zip" for playlists (artist is Unknown)
             const previewName = previewTitle?.textContent?.trim();
+            const previewArtistName = previewArtist?.textContent?.trim();
             const first = job.tracks[0];
             let zipName = job.job_id;
-            if (previewName) zipName = previewName;
-            else if (first?.album && first?.artist) zipName = `${first.album} - ${first.artist}`;
-            else if (first?.album) zipName = first.album;
-            else if (first?.artist) zipName = first.artist;
+            if (previewName) {
+                zipName = previewName;
+                // Append artist if available and not "Unknown"
+                if (previewArtistName && previewArtistName.toLowerCase() !== 'unknown') {
+                    zipName += ` - ${previewArtistName}`;
+                }
+            } else if (first?.album && first?.artist) {
+                zipName = `${first.album} - ${first.artist}`;
+            } else if (first?.album) {
+                zipName = first.album;
+            } else if (first?.artist) {
+                zipName = first.artist;
+            }
             zipName = zipName.replace(/[<>:"/\\|?*]/g, '_').trim();
             finalFilename = `${zipName}.zip`;
         }
