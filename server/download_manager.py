@@ -534,9 +534,17 @@ class DownloadManager:
                         artist=attrs.get("artistName", "Unknown"),
                         album=attrs.get("albumName", ""),
                         cover_url=cover_url,
+                        disc_number=attrs.get("discNumber", 1),
+                        disc_total=attrs.get("discCount", 1),
                         stage=DownloadStage.QUEUED,
                     )
                 )
+            # Compute disc_total from actual track disc numbers
+            # (discCount is album-level and may not be in per-track attrs)
+            if job.tracks:
+                actual_disc_total = max(t.disc_number for t in job.tracks)
+                for t in job.tracks:
+                    t.disc_total = actual_disc_total
             await self._broadcast_job(job)
 
             # 4. Download each track

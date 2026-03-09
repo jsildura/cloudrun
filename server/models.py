@@ -43,6 +43,8 @@ class TrackProgress(BaseModel):
     artist: str = ""
     album: str = ""
     cover_url: str = ""
+    disc_number: int = 0
+    disc_total: int = 0
     stage: DownloadStage = DownloadStage.QUEUED
     error_message: str | None = None
     file_path: str | None = None

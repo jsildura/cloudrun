@@ -86,6 +86,8 @@
         language: 'en-US',
         use_wrapper: false,
         rate_limit_delay: 7,
+        disc_folder_enabled: true,
+        disc_folder_label: 'Disc',
     };
 
     /**
@@ -350,6 +352,8 @@
             'cfg-language': 'language',
             'cfg-use-wrapper': 'use_wrapper',
             'cfg-rate-limit-delay': 'rate_limit_delay',
+            'cfg-disc-folder-enabled': 'disc_folder_enabled',
+            'cfg-disc-folder-label': 'disc_folder_label',
         };
 
         for (const [elId, key] of Object.entries(map)) {
@@ -384,6 +388,8 @@
             language: $('#cfg-language').value || undefined,
             use_wrapper: $('#cfg-use-wrapper').checked,
             rate_limit_delay: parseFloat($('#cfg-rate-limit-delay').value) || 2.0,
+            disc_folder_enabled: $('#cfg-disc-folder-enabled')?.checked ?? true,
+            disc_folder_label: $('#cfg-disc-folder-label')?.value || 'Disc',
         };
     }
 
@@ -825,8 +831,55 @@
             updateFetchStatus('Compressing 0%', 0);
 
             const zip = new JSZip();
-            for (const { blob, filename } of allEntries) {
-                zip.file(filename, blob);
+
+            // Check if this is a multi-disc album by looking at track disc numbers
+            const discNumbers = (job.tracks || []).map(t => t.disc_number || 1);
+            const maxDiscNumber = Math.max(1, ...discNumbers);
+            const userSettings = loadLocalSettings();
+            const useDiscFolders = maxDiscNumber > 1 && userSettings.disc_folder_enabled;
+
+            // Build a trackIndex → disc_number lookup
+            const discMap = {};
+            if (useDiscFolders) {
+                for (const t of (job.tracks || [])) {
+                    discMap[t.track_index] = t.disc_number || 1;
+                }
+            }
+
+            const discLabel = userSettings.disc_folder_label || 'Disc';
+
+            // Add audio entries with optional disc subfolder
+            for (const [trackIdx, entry] of Object.entries(jobBlobs)) {
+                const discNum = discMap[parseInt(trackIdx) + 1]; // track_index is 1-based
+                const prefix = useDiscFolders && discNum ? `${discLabel} ${discNum}/` : '';
+                zip.file(prefix + entry.filename, entry.blob);
+            }
+
+            // Add lyrics with same disc subfolder as their track
+            if (_lyricsBlobs[job.job_id]) {
+                for (const [trackIdx, entry] of Object.entries(_lyricsBlobs[job.job_id])) {
+                    const discNum = discMap[parseInt(trackIdx) + 1];
+                    const prefix = useDiscFolders && discNum ? `${discLabel} ${discNum}/` : '';
+                    zip.file(prefix + entry.filename, entry.blob);
+                }
+            }
+
+            // Add covers (deduplicated by filename, into each disc folder if multi-disc)
+            for (const entry of coverEntries) {
+                if (useDiscFolders) {
+                    // Put a copy in each disc folder
+                    const discs = new Set(Object.values(discMap));
+                    for (const d of discs) {
+                        zip.file(`${discLabel} ${d}/${entry.filename}`, entry.blob);
+                    }
+                } else {
+                    zip.file(entry.filename, entry.blob);
+                }
+            }
+
+            // Add animated artwork at root level
+            for (const entry of animatedArtworkEntries) {
+                zip.file(entry.filename, entry.blob);
             }
 
             finalBlob = await zip.generateAsync(
@@ -837,10 +890,13 @@
                 }
             );
 
-            // Build ZIP filename from first track metadata
+            // Build ZIP filename: prefer preview title (playlist/album name),
+            // fall back to first track metadata
+            const previewName = previewTitle?.textContent?.trim();
             const first = job.tracks[0];
             let zipName = job.job_id;
-            if (first?.album && first?.artist) zipName = `${first.album} - ${first.artist}`;
+            if (previewName) zipName = previewName;
+            else if (first?.album && first?.artist) zipName = `${first.album} - ${first.artist}`;
             else if (first?.album) zipName = first.album;
             else if (first?.artist) zipName = first.artist;
             zipName = zipName.replace(/[<>:"/\\|?*]/g, '_').trim();
