@@ -170,6 +170,8 @@ async def connect_auth(request: Request) -> AuthStatus:
 @router.post("/preview")
 async def preview_url(req: DownloadRequest, request: Request) -> PreviewResponse:
     """Fetch metadata for a URL without starting a download."""
+    import asyncio
+
     _check_rate_limit(request)
     token = _extract_token(request)
     dm = _get_user_dm(token)
@@ -180,12 +182,21 @@ async def preview_url(req: DownloadRequest, request: Request) -> PreviewResponse
     if not dm.has_subscription:
         raise HTTPException(status_code=403, detail="No active Apple Music subscription.")
 
-    try:
-        return await dm.preview_url(req.url, cfg)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Preview failed: {e}")
+    # Retry once on transient failure (handles cold-start / first-call issues
+    # with the Apple Music API through the WARP proxy)
+    last_error = None
+    for attempt in range(2):
+        try:
+            return await dm.preview_url(req.url, cfg)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            last_error = e
+            if attempt == 0:
+                logger.warning("[Preview] First attempt failed (%s), retrying in 1s…", e)
+                await asyncio.sleep(1)
+
+    raise HTTPException(status_code=500, detail=f"Preview failed: {last_error}")
 
 
 # ── Downloads ─────────────────────────────────────────────────────────────────
