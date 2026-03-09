@@ -35,7 +35,7 @@ cloud_storage: CloudStorage | None = None
 
 # ── Simple in-memory per-IP rate limiter ──────────────────────────────────────
 _rate_limits: dict[str, list[float]] = defaultdict(list)
-MAX_REQUESTS_PER_MINUTE = 30
+MAX_REQUESTS_PER_MINUTE = 120
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -291,7 +291,6 @@ async def retry_all_failed(job_id: str, request: Request) -> dict:
 @router.get("/system/stats")
 async def system_stats(request: Request) -> dict:
     """Return host CPU, RAM, and Swap usage. No auth required."""
-    _check_rate_limit(request)
     vm = psutil.virtual_memory()
     sw = psutil.swap_memory()
     return {
@@ -488,8 +487,6 @@ async def serve_file(file_path: str, request: Request):
 async def save_track_to_device(job_id: str, track_index: int, request: Request):
     """Serve a completed track file for browser download (save to device)."""
     from fastapi.responses import RedirectResponse
-
-    _check_rate_limit(request)
     token = _extract_token(request)
     dm = _get_user_dm(token)
     cfg = _get_current_config()
@@ -541,7 +538,6 @@ async def save_track_to_device(job_id: str, track_index: int, request: Request):
 @router.get("/save/{job_id}/{track_index}/lyrics")
 async def save_track_lyrics(job_id: str, track_index: int, request: Request):
     """Serve the synced lyrics file for a completed track."""
-    _check_rate_limit(request)
     token = _extract_token(request)
     dm = _get_user_dm(token)
 
@@ -577,7 +573,6 @@ async def save_track_lyrics(job_id: str, track_index: int, request: Request):
 @router.get("/save/{job_id}/{track_index}/cover")
 async def save_track_cover(job_id: str, track_index: int, request: Request):
     """Serve the cover image file for a completed track."""
-    _check_rate_limit(request)
     token = _extract_token(request)
     dm = _get_user_dm(token)
 
@@ -613,7 +608,6 @@ async def save_track_cover(job_id: str, track_index: int, request: Request):
 @router.get("/save/{job_id}/animated-artwork/{index}")
 async def save_animated_artwork(job_id: str, index: int, request: Request):
     """Serve an animated artwork MP4 file for a completed job."""
-    _check_rate_limit(request)
     token = _extract_token(request)
     dm = _get_user_dm(token)
 
