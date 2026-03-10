@@ -83,11 +83,14 @@ def _merge_user_config(base: ServerConfig, overrides: ConfigUpdate | None) -> Se
     # This prevents a malicious or buggy client from changing paths,
     # cloud settings, or tool binaries.
     ALLOWED_USER_FIELDS = {
-        "song_codec", "synced_lyrics_format", "no_synced_lyrics",
+        "song_codec", "codec_fallback", "synced_lyrics_format", "no_synced_lyrics",
         "synced_lyrics_only", "save_synced_lyrics", "music_video_resolution",
         "exclude_videos", "cover_format", "cover_size", "save_cover",
         "save_animated_artwork", "overwrite", "download_mode", "remux_mode",
         "language", "use_wrapper", "rate_limit_delay",
+        "album_folder_template", "compilation_folder_template",
+        "single_disc_file_template", "multi_disc_file_template",
+        "playlist_file_template",
     }
 
     from dataclasses import replace
@@ -519,9 +522,16 @@ async def save_track_to_device(job_id: str, track_index: int, request: Request):
 
     logger.info("Serving file for job=%s track=%d: %s (%d bytes)", job_id, track_index, file_path.name, file_path.stat().st_size)
 
+    # Compute relative path from output_path for ZIP folder structure
+    try:
+        relative_path = str(file_path.resolve().relative_to(Path(cfg.output_path).resolve()))
+    except ValueError:
+        relative_path = file_path.name
+
     # Stream file without Content-Disposition to prevent download manager
     # extensions (IDM, etc.) from intercepting JavaScript fetch() calls.
     # The filename is passed via X-Filename header for our JS code to read.
+    # X-Relative-Path preserves folder structure for ZIP assembly.
     def file_iterator():
         with open(file_path, "rb") as f:
             while chunk := f.read(65536):
@@ -531,7 +541,10 @@ async def save_track_to_device(job_id: str, track_index: int, request: Request):
     return StreamingResponse(
         file_iterator(),
         media_type="application/octet-stream",
-        headers={"X-Filename": file_path.name},
+        headers={
+            "X-Filename": file_path.name,
+            "X-Relative-Path": relative_path,
+        },
     )
 
 

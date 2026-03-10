@@ -151,6 +151,16 @@
                             decrypt the
                             DRM.</span>
                     </div>
+                    <div class="field">
+                        <label for="cfg-codec-fallback">Codec Fallback</label>
+                        <select class="select-input" id="cfg-codec-fallback">
+                            <option value="">Disabled</option>
+                            <option value="aac-legacy">AAC 256kbps (Stable)</option>
+                            <option value="aac-he-legacy">AAC-HE 64kbps (Stable)</option>
+                        </select>
+                        <span class="help-text">If an experimental codec fails, automatically retry with the
+                            selected stable codec.</span>
+                    </div>
                     <div class="field-row" style="margin-bottom: 20px;">
                         <label class="checkbox-label" title="Enable to use wrapper for DRM decryption">
                             <input type="checkbox" id="cfg-use-wrapper">
@@ -256,6 +266,41 @@
                             <option value="CD">CD</option>
                         </select>
                     </div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Templates</h3>
+                    <div class="field">
+                        <label for="cfg-album-folder-template">Album Folder</label>
+                        <input type="text" class="text-input" id="cfg-album-folder-template"
+                            placeholder="{album_artist}/{album}">
+                    </div>
+                    <div class="field">
+                        <label for="cfg-compilation-folder-template">Compilation Folder</label>
+                        <input type="text" class="text-input" id="cfg-compilation-folder-template"
+                            placeholder="Compilations/{album}">
+                    </div>
+                    <div class="field">
+                        <label for="cfg-single-disc-file-template">Single-Disc File</label>
+                        <input type="text" class="text-input" id="cfg-single-disc-file-template"
+                            placeholder="{track:02d} {title}">
+                    </div>
+                    <div class="field">
+                        <label for="cfg-multi-disc-file-template">Multi-Disc File</label>
+                        <input type="text" class="text-input" id="cfg-multi-disc-file-template"
+                            placeholder="{disc}-{track:02d} {title}">
+                    </div>
+                    <div class="field">
+                        <label for="cfg-playlist-file-template">Playlist File</label>
+                        <input type="text" class="text-input" id="cfg-playlist-file-template"
+                            placeholder="Playlists/{playlist_artist}/{playlist_title}">
+                    </div>
+                    <span class="help-text">Available placeholders:
+                        <strong>{title}</strong>,<strong>{artist}</strong>,<strong>{album}</strong>,
+                        <strong>{album_artist}</strong>,
+                        <strong>{track}</strong>, <strong>{disc}</strong>, <strong>{year}</strong>,
+                        <strong>{genre}</strong>, <strong>{playlist_title}</strong>, <strong>{playlist_artist}</strong>.
+                        <br><br>Use <strong>{track:02d}</strong> for zero-padded numbers.</span>
                 </div>
 
                 <div class="settings-group">

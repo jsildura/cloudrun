@@ -385,6 +385,8 @@ class DownloadManager:
             duration = attrs.get("durationInMillis", 0)
             total_duration_ms = duration
             song_audio_traits = attrs.get("audioTraits", [])
+            song_previews = attrs.get("previews", [])
+            song_preview_url = song_previews[0].get("url", "") if song_previews else ""
             tracks.append(PreviewTrack(
                 track_number=1,
                 title=attrs.get("name", "Unknown"),
@@ -393,6 +395,7 @@ class DownloadManager:
                 is_explicit=attrs.get("contentRating", "") == "explicit",
                 has_dolby_atmos="atmos" in song_audio_traits,
                 is_lossless="lossless" in song_audio_traits or "hi-res-lossless" in song_audio_traits,
+                preview_url=song_preview_url,
             ))
         else:
             # Album or playlist — extract tracks from relationships
@@ -410,6 +413,8 @@ class DownloadManager:
                 duration = t_attrs.get("durationInMillis", 0)
                 total_duration_ms += duration
                 t_audio_traits = t_attrs.get("audioTraits", [])
+                t_previews = t_attrs.get("previews", [])
+                t_preview_url = t_previews[0].get("url", "") if t_previews else ""
                 tracks.append(PreviewTrack(
                     track_number=i + 1,
                     title=t_attrs.get("name", "Unknown"),
@@ -419,6 +424,7 @@ class DownloadManager:
                     is_video=track.get("type") == "music-videos",
                     has_dolby_atmos="atmos" in t_audio_traits,
                     is_lossless="lossless" in t_audio_traits or "hi-res-lossless" in t_audio_traits,
+                    preview_url=t_preview_url,
                 ))
 
         response = PreviewResponse(
@@ -565,6 +571,7 @@ class DownloadManager:
                 max_retries = 3
                 retry_delays = [10, 30, 60]  # seconds
                 success = False
+                _used_fallback = False  # track whether we already tried the fallback
 
                 for attempt in range(max_retries + 1):
                     try:
@@ -572,6 +579,17 @@ class DownloadManager:
                         job.tracks[i].stage = DownloadStage.DONE
                         if hasattr(result_item, 'final_path') and result_item.final_path:
                             job.tracks[i].file_path = str(result_item.final_path)
+                            # Compute relative path from job temp dir for ZIP folder structure
+                            try:
+                                temp_dir = self._job_temp_dirs.get(job_id)
+                                if temp_dir:
+                                    job.tracks[i].relative_path = str(
+                                        Path(result_item.final_path).resolve().relative_to(
+                                            Path(temp_dir).resolve()
+                                        )
+                                    )
+                            except ValueError:
+                                pass
                             file_exists = Path(result_item.final_path).exists()
                             logger.info(
                                 "Track %d/%d done: file_path=%s exists=%s",
@@ -631,6 +649,79 @@ class DownloadManager:
                             await asyncio.sleep(delay)
                             job.tracks[i].error_message = None
                             continue
+                        # ── Codec fallback: try once with a stable codec ──
+                        if (
+                            not _used_fallback
+                            and config.codec_fallback
+                            and config.song_codec not in ("aac-legacy", "aac-he-legacy")
+                        ):
+                            _used_fallback = True
+                            original_codec = config.song_codec
+                            config.song_codec = config.codec_fallback
+                            logger.warning(
+                                "Codec fallback: track %d failed with '%s', "
+                                "retrying with '%s'",
+                                i + 1, original_codec, config.codec_fallback,
+                            )
+                            job.tracks[i].error_message = (
+                                f"Codec '{original_codec}' failed, falling back to "
+                                f"'{config.codec_fallback}'…"
+                            )
+                            job.tracks[i].stage = DownloadStage.DOWNLOADING
+                            await self._broadcast_job(job)
+                            downloader = self._build_downloader(config, job_id=job_id)
+                            # Restore original codec for subsequent tracks
+                            config.song_codec = original_codec
+                            # Re-enter retry loop from attempt 0
+                            try:
+                                result_item = await downloader.download(download_item)
+                                job.tracks[i].stage = DownloadStage.DONE
+                                job.tracks[i].error_message = None
+                                if hasattr(result_item, 'final_path') and result_item.final_path:
+                                    job.tracks[i].file_path = str(result_item.final_path)
+                                    try:
+                                        _td = self._job_temp_dirs.get(job_id)
+                                        if _td:
+                                            job.tracks[i].relative_path = str(
+                                                Path(result_item.final_path).resolve().relative_to(Path(_td).resolve())
+                                            )
+                                    except ValueError:
+                                        pass
+                                    if hasattr(result_item, 'synced_lyrics_path') and result_item.synced_lyrics_path:
+                                        lyrics_path = Path(result_item.synced_lyrics_path)
+                                        if lyrics_path.exists():
+                                            job.tracks[i].synced_lyrics_file_path = str(lyrics_path)
+                                    if hasattr(result_item, 'cover_path') and result_item.cover_path:
+                                        cover_path = Path(result_item.cover_path)
+                                        if cover_path.exists():
+                                            job.tracks[i].cover_file_path = str(cover_path)
+                                    if config.cloud_mode and self._storage and self._current_token:
+                                        output_path = result_item.final_path
+                                        object_key = self._storage.object_key(
+                                            user_token=self._current_token,
+                                            job_id=job_id,
+                                            filename=Path(output_path).name,
+                                        )
+                                        self._storage.upload_file(output_path, object_key)
+                                        job.tracks[i].download_url = self._storage.get_signed_url(object_key)
+                                        Path(output_path).unlink(missing_ok=True)
+                                success = True
+                                # Rebuild downloader with original codec for remaining tracks
+                                downloader = self._build_downloader(config, job_id=job_id)
+                                break
+                            except Exception as fallback_err:
+                                logger.error(
+                                    "Codec fallback also failed for track %d: %s",
+                                    i + 1, fallback_err,
+                                )
+                                job.tracks[i].stage = DownloadStage.ERROR
+                                job.tracks[i].error_message = (
+                                    f"Fallback '{config.codec_fallback}' also failed: "
+                                    f"{fallback_err}"
+                                )
+                                # Rebuild downloader with original codec for remaining tracks
+                                downloader = self._build_downloader(config, job_id=job_id)
+                                break
                         job.tracks[i].stage = DownloadStage.ERROR
                         job.tracks[i].error_message = error_msg
                         logger.warning(f"Track skipped: {e}")
@@ -652,6 +743,75 @@ class DownloadManager:
                             await asyncio.sleep(delay)
                             job.tracks[i].error_message = None
                             continue
+                        # ── Codec fallback: try once with a stable codec ──
+                        if (
+                            not _used_fallback
+                            and config.codec_fallback
+                            and config.song_codec not in ("aac-legacy", "aac-he-legacy")
+                        ):
+                            _used_fallback = True
+                            original_codec = config.song_codec
+                            config.song_codec = config.codec_fallback
+                            logger.warning(
+                                "Codec fallback: track %d failed with '%s', "
+                                "retrying with '%s'",
+                                i + 1, original_codec, config.codec_fallback,
+                            )
+                            job.tracks[i].error_message = (
+                                f"Codec '{original_codec}' failed, falling back to "
+                                f"'{config.codec_fallback}'…"
+                            )
+                            job.tracks[i].stage = DownloadStage.DOWNLOADING
+                            await self._broadcast_job(job)
+                            downloader = self._build_downloader(config, job_id=job_id)
+                            config.song_codec = original_codec
+                            try:
+                                result_item = await downloader.download(download_item)
+                                job.tracks[i].stage = DownloadStage.DONE
+                                job.tracks[i].error_message = None
+                                if hasattr(result_item, 'final_path') and result_item.final_path:
+                                    job.tracks[i].file_path = str(result_item.final_path)
+                                    try:
+                                        _td = self._job_temp_dirs.get(job_id)
+                                        if _td:
+                                            job.tracks[i].relative_path = str(
+                                                Path(result_item.final_path).resolve().relative_to(Path(_td).resolve())
+                                            )
+                                    except ValueError:
+                                        pass
+                                    if hasattr(result_item, 'synced_lyrics_path') and result_item.synced_lyrics_path:
+                                        lyrics_path = Path(result_item.synced_lyrics_path)
+                                        if lyrics_path.exists():
+                                            job.tracks[i].synced_lyrics_file_path = str(lyrics_path)
+                                    if hasattr(result_item, 'cover_path') and result_item.cover_path:
+                                        cover_path = Path(result_item.cover_path)
+                                        if cover_path.exists():
+                                            job.tracks[i].cover_file_path = str(cover_path)
+                                    if config.cloud_mode and self._storage and self._current_token:
+                                        output_path = result_item.final_path
+                                        object_key = self._storage.object_key(
+                                            user_token=self._current_token,
+                                            job_id=job_id,
+                                            filename=Path(output_path).name,
+                                        )
+                                        self._storage.upload_file(output_path, object_key)
+                                        job.tracks[i].download_url = self._storage.get_signed_url(object_key)
+                                        Path(output_path).unlink(missing_ok=True)
+                                success = True
+                                downloader = self._build_downloader(config, job_id=job_id)
+                                break
+                            except Exception as fallback_err:
+                                logger.error(
+                                    "Codec fallback also failed for track %d: %s",
+                                    i + 1, fallback_err,
+                                )
+                                job.tracks[i].stage = DownloadStage.ERROR
+                                job.tracks[i].error_message = (
+                                    f"Fallback '{config.codec_fallback}' also failed: "
+                                    f"{fallback_err}"
+                                )
+                                downloader = self._build_downloader(config, job_id=job_id)
+                                break
                         job.tracks[i].stage = DownloadStage.ERROR
                         job.tracks[i].error_message = error_msg
                         logger.error(f"Track error: {e}", exc_info=True)
@@ -903,6 +1063,14 @@ class DownloadManager:
                     track.stage = DownloadStage.DONE
                     if hasattr(result_item, 'final_path') and result_item.final_path:
                         track.file_path = str(result_item.final_path)
+                        try:
+                            _td = self._job_temp_dirs.get(job_id)
+                            if _td:
+                                track.relative_path = str(
+                                    Path(result_item.final_path).resolve().relative_to(Path(_td).resolve())
+                                )
+                        except ValueError:
+                            pass
                         # Track synced lyrics file if it was saved
                         if hasattr(result_item, 'synced_lyrics_path') and result_item.synced_lyrics_path:
                             lyrics_path = Path(result_item.synced_lyrics_path)
@@ -1026,6 +1194,14 @@ class DownloadManager:
                         track.stage = DownloadStage.DONE
                         if hasattr(result_item, 'final_path') and result_item.final_path:
                             track.file_path = str(result_item.final_path)
+                            try:
+                                _td = self._job_temp_dirs.get(job_id)
+                                if _td:
+                                    track.relative_path = str(
+                                        Path(result_item.final_path).resolve().relative_to(Path(_td).resolve())
+                                    )
+                            except ValueError:
+                                pass
                             # Track synced lyrics file if it was saved
                             if hasattr(result_item, 'synced_lyrics_path') and result_item.synced_lyrics_path:
                                 lyrics_path = Path(result_item.synced_lyrics_path)

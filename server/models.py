@@ -50,6 +50,7 @@ class TrackProgress(BaseModel):
     file_path: str | None = None
     synced_lyrics_file_path: str | None = None
     cover_file_path: str | None = None
+    relative_path: str | None = None    # path relative to job temp dir (for ZIP folder structure)
     download_url: str | None = None    # signed R2 URL for cloud mode
 
 
@@ -76,6 +77,7 @@ class PreviewTrack(BaseModel):
     is_video: bool = False
     has_dolby_atmos: bool = False
     is_lossless: bool = False
+    preview_url: str = ""
 
 class PreviewResponse(BaseModel):
     url: str
@@ -131,6 +133,7 @@ class ConfigUpdate(BaseModel):
     exclude_tags: list[str] | None = None
     truncate: int | None = None
     song_codec: str | None = None
+    codec_fallback: str | None = None
     synced_lyrics_format: str | None = None
     no_synced_lyrics: bool | None = None
     synced_lyrics_only: bool | None = None

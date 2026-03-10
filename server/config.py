@@ -61,6 +61,7 @@ class ServerConfig:
 
     # Song options
     song_codec: str = "aac-legacy"
+    codec_fallback: str = ""  # "" = disabled, "aac-legacy" or "aac-he-legacy"
     synced_lyrics_format: str = "lrc"
     no_synced_lyrics: bool = False
     synced_lyrics_only: bool = False

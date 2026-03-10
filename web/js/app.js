@@ -64,6 +64,57 @@
     const _savedJobs = new Set(); // Jobs that already triggered auto-save
     const _activeJobs = new Set(); // Jobs started in THIS browser session (not replayed)
 
+    // ── Audio Preview Manager ────────────────────────────────────────────
+    let _previewAudio = null;       // Current HTMLAudioElement
+    let _previewActiveBtn = null;   // Currently active play button element
+
+    function stopPreviewAudio() {
+        if (_previewAudio) {
+            _previewAudio.pause();
+            _previewAudio.src = '';
+            _previewAudio = null;
+        }
+        if (_previewActiveBtn) {
+            _previewActiveBtn.querySelector('.icon-play').style.display = '';
+            _previewActiveBtn.querySelector('.icon-eq').style.display = 'none';
+            _previewActiveBtn.closest('.preview-track-item')?.classList.remove('playing');
+            _previewActiveBtn = null;
+        }
+    }
+
+    function togglePreviewAudio(btn) {
+        const url = btn.dataset.previewUrl;
+        if (!url) return;
+
+        // If same button is already playing, pause it
+        if (_previewActiveBtn === btn && _previewAudio && !_previewAudio.paused) {
+            stopPreviewAudio();
+            return;
+        }
+
+        // Stop any currently playing preview
+        stopPreviewAudio();
+
+        // Start new preview
+        _previewAudio = new Audio(url);
+        _previewActiveBtn = btn;
+        btn.querySelector('.icon-play').style.display = 'none';
+        btn.querySelector('.icon-eq').style.display = '';
+        btn.closest('.preview-track-item')?.classList.add('playing');
+
+        _previewAudio.play().catch(() => stopPreviewAudio());
+        _previewAudio.addEventListener('ended', () => stopPreviewAudio());
+    }
+
+    // Delegate click on preview play buttons
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.preview-play-btn');
+        if (btn) {
+            e.stopPropagation();
+            togglePreviewAudio(btn);
+        }
+    });
+
     // ── LocalStorage settings ────────────────────────────────────────────
     const SETTINGS_KEY = 'gamdl_user_settings';
 
@@ -88,6 +139,12 @@
         rate_limit_delay: 7,
         disc_folder_enabled: true,
         disc_folder_label: 'Disc',
+        codec_fallback: '',
+        album_folder_template: '{album_artist}/{album}',
+        compilation_folder_template: 'Compilations/{album}',
+        single_disc_file_template: '{track:02d} {title}',
+        multi_disc_file_template: '{disc}-{track:02d} {title}',
+        playlist_file_template: 'Playlists/{playlist_artist}/{playlist_title}',
     };
 
     /**
@@ -354,6 +411,12 @@
             'cfg-rate-limit-delay': 'rate_limit_delay',
             'cfg-disc-folder-enabled': 'disc_folder_enabled',
             'cfg-disc-folder-label': 'disc_folder_label',
+            'cfg-codec-fallback': 'codec_fallback',
+            'cfg-album-folder-template': 'album_folder_template',
+            'cfg-compilation-folder-template': 'compilation_folder_template',
+            'cfg-single-disc-file-template': 'single_disc_file_template',
+            'cfg-multi-disc-file-template': 'multi_disc_file_template',
+            'cfg-playlist-file-template': 'playlist_file_template',
         };
 
         for (const [elId, key] of Object.entries(map)) {
@@ -390,6 +453,12 @@
             rate_limit_delay: parseFloat($('#cfg-rate-limit-delay').value) || 2.0,
             disc_folder_enabled: $('#cfg-disc-folder-enabled')?.checked ?? true,
             disc_folder_label: $('#cfg-disc-folder-label')?.value || 'Disc',
+            codec_fallback: $('#cfg-codec-fallback')?.value || '',
+            album_folder_template: $('#cfg-album-folder-template')?.value || undefined,
+            compilation_folder_template: $('#cfg-compilation-folder-template')?.value || undefined,
+            single_disc_file_template: $('#cfg-single-disc-file-template')?.value || undefined,
+            multi_disc_file_template: $('#cfg-multi-disc-file-template')?.value || undefined,
+            playlist_file_template: $('#cfg-playlist-file-template')?.value || undefined,
         };
     }
 
@@ -848,32 +917,58 @@
 
             const discLabel = userSettings.disc_folder_label || 'Disc';
 
-            // Add audio entries with optional disc subfolder
-            for (const [trackIdx, entry] of Object.entries(jobBlobs)) {
-                const discNum = discMap[parseInt(trackIdx) + 1]; // track_index is 1-based
-                const prefix = useDiscFolders && discNum ? `${discLabel} ${discNum}/` : '';
-                zip.file(prefix + entry.filename, entry.blob);
+            // Helper: get folder prefix from a track's relative path
+            function _folderOf(relPath) {
+                if (!relPath) return '';
+                const lastSlash = relPath.replace(/\\/g, '/').lastIndexOf('/');
+                return lastSlash >= 0 ? relPath.replace(/\\/g, '/').substring(0, lastSlash + 1) : '';
+            }
+            // Helper: get just the filename from a path
+            function _filenameOf(relPath) {
+                if (!relPath) return relPath;
+                const lastSlash = relPath.replace(/\\/g, '/').lastIndexOf('/');
+                return lastSlash >= 0 ? relPath.substring(lastSlash + 1) : relPath;
             }
 
-            // Add lyrics with same disc subfolder as their track
+            // Add audio entries with relative path from backend templates
+            for (const [trackIdx, entry] of Object.entries(jobBlobs)) {
+                const track = job.tracks?.[parseInt(trackIdx)];
+                let zipPath = track?.relative_path || entry.filename;
+                // Insert disc subfolder if enabled (e.g., "Artist/Album/CD 1/01 Track.m4a")
+                if (useDiscFolders && track) {
+                    const discNum = track.disc_number || 1;
+                    const folder = _folderOf(zipPath);
+                    const fname = _filenameOf(zipPath);
+                    zipPath = `${folder}${discLabel} ${discNum}/${fname}`;
+                }
+                zip.file(zipPath, entry.blob);
+            }
+
+            // Add lyrics in the same folder as their corresponding track
             if (_lyricsBlobs[job.job_id]) {
                 for (const [trackIdx, entry] of Object.entries(_lyricsBlobs[job.job_id])) {
-                    const discNum = discMap[parseInt(trackIdx) + 1];
-                    const prefix = useDiscFolders && discNum ? `${discLabel} ${discNum}/` : '';
-                    zip.file(prefix + entry.filename, entry.blob);
+                    const track = job.tracks?.[parseInt(trackIdx)];
+                    const relPath = track?.relative_path;
+                    let folder = relPath ? _folderOf(relPath) : '';
+                    if (useDiscFolders && track) {
+                        const discNum = track.disc_number || 1;
+                        folder = `${folder}${discLabel} ${discNum}/`;
+                    }
+                    zip.file(folder + entry.filename, entry.blob);
                 }
             }
 
-            // Add covers (deduplicated by filename, into each disc folder if multi-disc)
+            // Add covers — one copy per disc subfolder if enabled, otherwise in album folder
+            const firstTrack = job.tracks?.[0];
+            const coverFolder = firstTrack?.relative_path ? _folderOf(firstTrack.relative_path) : '';
             for (const entry of coverEntries) {
                 if (useDiscFolders) {
-                    // Put a copy in each disc folder
-                    const discs = new Set(Object.values(discMap));
+                    const discs = new Set(discNumbers);
                     for (const d of discs) {
-                        zip.file(`${discLabel} ${d}/${entry.filename}`, entry.blob);
+                        zip.file(`${coverFolder}${discLabel} ${d}/${entry.filename}`, entry.blob);
                     }
                 } else {
-                    zip.file(entry.filename, entry.blob);
+                    zip.file(coverFolder + entry.filename, entry.blob);
                 }
             }
 
@@ -1122,9 +1217,19 @@
         }
 
         // Build track list
-        const tracksHtml = data.tracks.map(t => `
-            <div class="preview-track-item">
+        const tracksHtml = data.tracks.map(t => {
+            const hasPreview = !!t.preview_url;
+            const playBtnHtml = hasPreview
+                ? `<button class="preview-play-btn" data-preview-url="${escapeHtml(t.preview_url)}" title="Play 30s preview" aria-label="Play preview">
+                       <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>
+                       <svg class="icon-eq" viewBox="0 0 16 16" fill="currentColor" style="display:none"><rect class="eq-bar" x="1" y="6" width="3" rx="1" height="10"/><rect class="eq-bar" x="6.5" y="2" width="3" rx="1" height="14"/><rect class="eq-bar" x="12" y="4" width="3" rx="1" height="12"/></svg>
+                       <svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="3" width="4" height="18"/><rect x="15" y="3" width="4" height="18"/></svg>
+                   </button>`
+                : '';
+            return `
+            <div class="preview-track-item${hasPreview ? ' has-preview' : ''}">
                 <span class="preview-track-num">${t.track_number}</span>
+                ${playBtnHtml}
                 <div class="preview-track-info">
                     <div class="preview-track-name">
                         ${t.is_video ? '<span class="video-badge" title="Music Video"><svg xmlns="http://www.w3.org/2000/svg" fill-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2" clip-rule="evenodd" viewBox="0 0 19 16" xml:space="preserve"><path fill-rule="nonzero" d="M16.747 12.437c1.166 0 1.753-.565 1.753-1.771V2.771C18.5 1.565 17.913 1 16.747 1H2.253C1.087 1 .5 1.565.5 2.771v7.895c0 1.206.587 1.771 1.753 1.771h14.494Zm-.02-1.109H2.273c-.47 0-.675-.193-.675-.675V2.791c0-.489.205-.682.675-.682h14.454c.47 0 .675.193.675.682v7.862c0 .482-.205.675-.675.675Zm-8.738-1.296c.976 0 1.637-.709 1.637-1.708V5.961c0-.255.055-.324.205-.359l1.603-.385c.327-.09.429-.159.429-.559v-1.35c0-.262-.095-.379-.457-.289l-1.991.503c-.341.082-.41.151-.41.558v3.107c0 .303-.027.358-.375.455l-.627.165c-.621.165-1.139.537-1.139 1.213 0 .585.436 1.012 1.125 1.012ZM13.828 15a.636.636 0 0 0 .627-.648.636.636 0 0 0-.627-.647H5.159a.642.642 0 0 0-.635.647c0 .359.287.648.635.648h8.669Z"></path></svg></span>' : ''}
@@ -1132,12 +1237,12 @@
                         ${t.is_explicit ? '<span class="explicit-badge inline-badge">E</span>' : ''}
                     </div>
                     ${data.media_type !== 'song' && t.artist !== data.artist
-                ? `<div class="preview-track-artist">${escapeHtml(t.artist)}</div>`
-                : ''}
+                    ? `<div class="preview-track-artist">${escapeHtml(t.artist)}</div>`
+                    : ''}
                 </div>
                 <span class="preview-track-duration">${formatDuration(t.duration_ms)}</span>
             </div>
-        `).join('');
+        `}).join('');
         previewTracks.innerHTML = tracksHtml;
 
         // Build footer
@@ -1159,6 +1264,7 @@
     }
 
     function hidePreview() {
+        stopPreviewAudio();
         previewSection.classList.remove('visible');
         _previewUrl = null;
         _activeJobId = null;

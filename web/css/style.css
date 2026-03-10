@@ -1572,6 +1572,99 @@ a:hover {
     font-variant-numeric: tabular-nums;
 }
 
+/* Audio preview play button */
+.preview-play-btn {
+    display: none;
+    width: 24px;
+    height: 24px;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+    border-radius: 50%;
+    transition: color 0.15s ease, transform 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.preview-play-btn svg {
+    width: 12px;
+    height: 12px;
+}
+
+.preview-play-btn:hover {
+    color: var(--accent);
+    transform: scale(1.15);
+}
+
+/* On hover: hide track number, show play button */
+.preview-track-item.has-preview:hover .preview-track-num {
+    display: none;
+}
+
+.preview-track-item.has-preview:hover .preview-play-btn {
+    display: flex;
+}
+
+/* While playing: always show eq button, hide track number */
+.preview-track-item.playing .preview-track-num {
+    display: none;
+}
+
+.preview-track-item.playing .preview-play-btn {
+    display: flex;
+    color: var(--accent);
+}
+
+/* Pause icon hidden by default */
+.preview-play-btn .icon-pause {
+    display: none;
+}
+
+/* While playing + hover: swap equalizer for pause icon */
+.preview-track-item.playing .preview-play-btn:hover .icon-eq {
+    display: none;
+}
+
+.preview-track-item.playing .preview-play-btn:hover .icon-pause {
+    display: block;
+}
+
+.preview-track-item.playing {
+    background: rgba(255, 43, 92, 0.06);
+}
+
+/* Animated equalizer bars */
+.icon-eq .eq-bar {
+    transform-origin: bottom;
+    animation: eqBounce 0.8s ease-in-out infinite alternate;
+}
+
+.icon-eq .eq-bar:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.icon-eq .eq-bar:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.icon-eq .eq-bar:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes eqBounce {
+    0% {
+        transform: scaleY(0.3);
+    }
+
+    100% {
+        transform: scaleY(1);
+    }
+}
+
 .preview-track-info {
     flex: 1;
     min-width: 0;
@@ -1723,6 +1816,15 @@ a:hover {
 
     .preview-track-item {
         padding: 8px 14px 8px 8px;
+    }
+
+    /* On mobile: always show play button since no hover */
+    .preview-track-item.has-preview .preview-track-num {
+        display: none;
+    }
+
+    .preview-track-item.has-preview .preview-play-btn {
+        display: flex;
     }
 
     .preview-footer {
