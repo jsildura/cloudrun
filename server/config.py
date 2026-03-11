@@ -7,7 +7,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, fields, asdict
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +48,9 @@ class ServerConfig:
     mp4box_path: str = "MP4Box"
 
     # Template options
-    album_folder_template: str = "{album_artist}/{album}"
-    compilation_folder_template: str = "Compilations/{album}"
-    no_album_folder_template: str = "{artist}/Unknown Album"
+    album_folder_template: str = ""
+    compilation_folder_template: str = ""
+    no_album_folder_template: str = ""
     single_disc_file_template: str = "{track:02d} {title}"
     multi_disc_file_template: str = "{disc}-{track:02d} {title}"
     no_album_file_template: str = "{title}"
@@ -95,6 +95,9 @@ def load_config(config_path: Path = DEFAULT_CONFIG_PATH) -> ServerConfig:
     if config_path.exists():
         try:
             data = json.loads(config_path.read_text(encoding="utf-8"))
+            # Filter out unknown keys (e.g. from older config versions)
+            valid_keys = {f.name for f in fields(ServerConfig)}
+            data = {k: v for k, v in data.items() if k in valid_keys}
             config = ServerConfig(**data)
         except Exception as e:
             logger.warning(f"Failed to load config from {config_path}: {e}")

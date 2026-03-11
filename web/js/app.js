@@ -39,7 +39,10 @@
     // Settings modal
     const modalSettings = $('#modal-settings');
     const btnSaveSettings = $('#btn-save-settings');
-    const btnUploadCookie = $('#btn-upload-cookie');
+    const btnUploadCookie = $('#cookie-upload'); // dropzone is the clickable area
+    const authStatusCard = $('#auth-status-card');
+    const authStatusLabel = $('#auth-status-label');
+    const authStatusDetail = $('#auth-status-detail');
     const cookieFile = $('#cookie-file');
     const cookieStatus = $('#cookie-status');
     const btnConnect = $('#btn-connect');
@@ -54,6 +57,7 @@
     const jobs = {};
     let isSubmitting = false;
     let _previewUrl = null;     // URL currently shown in preview
+    let _previewMediaType = null; // 'song', 'album', or 'playlist'
     let _activeJobId = null;    // Job ID linked to current preview
     const _trackBlobs = {};     // jobId → { trackIndex: { blob, filename } }
     const _blobPromises = {};   // jobId → { trackIndex: Promise }
@@ -106,9 +110,11 @@
         _previewAudio.addEventListener('ended', () => stopPreviewAudio());
     }
 
-    // Delegate click on preview play buttons
+    // Delegate click on preview track items (entire row is clickable)
     document.addEventListener('click', (e) => {
-        const btn = e.target.closest('.preview-play-btn');
+        const trackItem = e.target.closest('.preview-track-item.has-preview');
+        if (!trackItem) return;
+        const btn = trackItem.querySelector('.preview-play-btn');
         if (btn) {
             e.stopPropagation();
             togglePreviewAudio(btn);
@@ -140,8 +146,9 @@
         disc_folder_enabled: true,
         disc_folder_label: 'Disc',
         codec_fallback: '',
-        album_folder_template: '{album_artist}/{album}',
-        compilation_folder_template: 'Compilations/{album}',
+        compressed_album_template: '{album} - {album_artist}',
+        compressed_single_template: '{title} - {album_artist}',
+        compressed_playlist_template: '{playlist} - {album_artist}',
         single_disc_file_template: '{track:02d} {title}',
         multi_disc_file_template: '{disc}-{track:02d} {title}',
         playlist_file_template: 'Playlists/{playlist_artist}/{playlist_title}',
@@ -152,17 +159,27 @@
      * Returns a plain object with all user preference keys.
      */
     function loadLocalSettings() {
+        // Force folder templates to empty — ZIP naming is frontend-only now
+        const FOLDER_OVERRIDES = {
+            album_folder_template: '',
+            compilation_folder_template: '',
+            no_album_folder_template: '',
+        };
         try {
             const raw = localStorage.getItem(SETTINGS_KEY);
             if (raw) {
                 const saved = JSON.parse(raw);
+                // Remove deprecated folder template keys (replaced by compressed file templates)
+                delete saved.album_folder_template;
+                delete saved.compilation_folder_template;
+                delete saved.no_album_folder_template;
                 // Merge saved on top of defaults so new keys get defaults
-                return { ...DEFAULT_SETTINGS, ...saved };
+                return { ...DEFAULT_SETTINGS, ...saved, ...FOLDER_OVERRIDES };
             }
         } catch (e) {
             console.warn('[Settings] Failed to load from localStorage:', e);
         }
-        return { ...DEFAULT_SETTINGS };
+        return { ...DEFAULT_SETTINGS, ...FOLDER_OVERRIDES };
     }
 
     /**
@@ -233,9 +250,17 @@
                 : 'unknown';
             cookieStatus.textContent = `Token saved (${savedAt})`;
             cookieStatus.classList.add('success');
+            // Update status card
+            if (authStatusCard) authStatusCard.classList.add('connected');
+            if (authStatusLabel) authStatusLabel.textContent = 'Connected';
+            if (authStatusDetail) authStatusDetail.textContent = `Token saved ${savedAt}`;
         } else {
-            cookieStatus.textContent = 'No token — upload cookies.txt';
+            cookieStatus.textContent = '';
             cookieStatus.classList.remove('success');
+            // Update status card
+            if (authStatusCard) authStatusCard.classList.remove('connected');
+            if (authStatusLabel) authStatusLabel.textContent = 'Not Connected';
+            if (authStatusDetail) authStatusDetail.textContent = 'Upload cookies.txt to connect';
         }
     }
 
@@ -412,8 +437,9 @@
             'cfg-disc-folder-enabled': 'disc_folder_enabled',
             'cfg-disc-folder-label': 'disc_folder_label',
             'cfg-codec-fallback': 'codec_fallback',
-            'cfg-album-folder-template': 'album_folder_template',
-            'cfg-compilation-folder-template': 'compilation_folder_template',
+            'cfg-compressed-album-template': 'compressed_album_template',
+            'cfg-compressed-single-template': 'compressed_single_template',
+            'cfg-compressed-playlist-template': 'compressed_playlist_template',
             'cfg-single-disc-file-template': 'single_disc_file_template',
             'cfg-multi-disc-file-template': 'multi_disc_file_template',
             'cfg-playlist-file-template': 'playlist_file_template',
@@ -454,11 +480,16 @@
             disc_folder_enabled: $('#cfg-disc-folder-enabled')?.checked ?? true,
             disc_folder_label: $('#cfg-disc-folder-label')?.value || 'Disc',
             codec_fallback: $('#cfg-codec-fallback')?.value || '',
-            album_folder_template: $('#cfg-album-folder-template')?.value || undefined,
-            compilation_folder_template: $('#cfg-compilation-folder-template')?.value || undefined,
+            compressed_album_template: $('#cfg-compressed-album-template')?.value || undefined,
+            compressed_single_template: $('#cfg-compressed-single-template')?.value || undefined,
+            compressed_playlist_template: $('#cfg-compressed-playlist-template')?.value || undefined,
             single_disc_file_template: $('#cfg-single-disc-file-template')?.value || undefined,
             multi_disc_file_template: $('#cfg-multi-disc-file-template')?.value || undefined,
             playlist_file_template: $('#cfg-playlist-file-template')?.value || undefined,
+            // Force folder templates to empty — ZIP naming is now frontend-only
+            album_folder_template: '',
+            compilation_folder_template: '',
+            no_album_folder_template: '',
         };
     }
 
@@ -985,25 +1016,41 @@
                 }
             );
 
-            // Build ZIP filename: "Album - Artist.zip" for albums,
-            // "Playlist Name.zip" for playlists (artist is Unknown)
+            // Build ZIP filename from user template based on media type
             const previewName = previewTitle?.textContent?.trim();
             const previewArtistName = previewArtist?.textContent?.trim();
             const first = job.tracks[0];
-            let zipName = job.job_id;
-            if (previewName) {
-                zipName = previewName;
-                // Append artist if available and not "Unknown"
-                if (previewArtistName && previewArtistName.toLowerCase() !== 'unknown') {
-                    zipName += ` - ${previewArtistName}`;
-                }
-            } else if (first?.album && first?.artist) {
-                zipName = `${first.album} - ${first.artist}`;
-            } else if (first?.album) {
-                zipName = first.album;
-            } else if (first?.artist) {
-                zipName = first.artist;
+            const mediaType = _previewMediaType || (job.tracks.length === 1 ? 'song' : 'album');
+
+            // Pick the right template
+            let tpl;
+            if (mediaType === 'song') {
+                tpl = userSettings.compressed_single_template || DEFAULT_SETTINGS.compressed_single_template;
+            } else if (mediaType === 'playlist') {
+                tpl = userSettings.compressed_playlist_template || DEFAULT_SETTINGS.compressed_playlist_template;
+            } else {
+                tpl = userSettings.compressed_album_template || DEFAULT_SETTINGS.compressed_album_template;
             }
+
+            // Build replacement map
+            const albumArtist = previewArtistName && previewArtistName.toLowerCase() !== 'unknown' ? previewArtistName : '';
+            const replacements = {
+                '{title}': first?.title || previewName || '',
+                '{artist}': first?.artist || albumArtist || '',
+                '{album}': first?.album || previewName || '',
+                '{album_artist}': albumArtist,
+                '{playlist}': previewName || '',
+                '{playlist_artist}': albumArtist,
+            };
+
+            let zipName = tpl;
+            for (const [token, val] of Object.entries(replacements)) {
+                zipName = zipName.split(token).join(val);
+            }
+            // Clean up dangling separators when artist is empty (e.g. " - ")
+            zipName = zipName.replace(/\s*-\s*$/g, '').replace(/^\s*-\s*/g, '').trim();
+            // Fallback if template produced empty string
+            if (!zipName) zipName = previewName || first?.album || job.job_id;
             zipName = zipName.replace(/[<>:"/\\|?*]/g, '_').trim();
             finalFilename = `${zipName}.zip`;
         }
@@ -1139,6 +1186,7 @@
 
     function showPreview(data) {
         _previewUrl = data.url;
+        _previewMediaType = data.media_type || null;
 
         // Populate header
         previewTitle.textContent = data.title;
@@ -1228,8 +1276,10 @@
                 : '';
             return `
             <div class="preview-track-item${hasPreview ? ' has-preview' : ''}">
-                <span class="preview-track-num">${t.track_number}</span>
-                ${playBtnHtml}
+                <div class="preview-track-num-wrap">
+                    <span class="preview-track-num">${t.track_number}</span>
+                    ${playBtnHtml}
+                </div>
                 <div class="preview-track-info">
                     <div class="preview-track-name">
                         ${t.is_video ? '<span class="video-badge" title="Music Video"><svg xmlns="http://www.w3.org/2000/svg" fill-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2" clip-rule="evenodd" viewBox="0 0 19 16" xml:space="preserve"><path fill-rule="nonzero" d="M16.747 12.437c1.166 0 1.753-.565 1.753-1.771V2.771C18.5 1.565 17.913 1 16.747 1H2.253C1.087 1 .5 1.565.5 2.771v7.895c0 1.206.587 1.771 1.753 1.771h14.494Zm-.02-1.109H2.273c-.47 0-.675-.193-.675-.675V2.791c0-.489.205-.682.675-.682h14.454c.47 0 .675.193.675.682v7.862c0 .482-.205.675-.675.675Zm-8.738-1.296c.976 0 1.637-.709 1.637-1.708V5.961c0-.255.055-.324.205-.359l1.603-.385c.327-.09.429-.159.429-.559v-1.35c0-.262-.095-.379-.457-.289l-1.991.503c-.341.082-.41.151-.41.558v3.107c0 .303-.027.358-.375.455l-.627.165c-.621.165-1.139.537-1.139 1.213 0 .585.436 1.012 1.125 1.012ZM13.828 15a.636.636 0 0 0 .627-.648.636.636 0 0 0-.627-.647H5.159a.642.642 0 0 0-.635.647c0 .359.287.648.635.648h8.669Z"></path></svg></span>' : ''}
@@ -1267,6 +1317,7 @@
         stopPreviewAudio();
         previewSection.classList.remove('visible');
         _previewUrl = null;
+        _previewMediaType = null;
         _activeJobId = null;
         previewCard.style.removeProperty('--preview-bg');
         clearStatus();
@@ -1558,9 +1609,33 @@
         });
     }
 
-    // Cookie file upload — parse client-side, extract token, store in browser
-    btnUploadCookie.addEventListener('click', () => {
+    // Cookie file upload — click dropzone to browse
+    btnUploadCookie.addEventListener('click', (e) => {
+        // Don't re-trigger if clicking the file input itself
+        if (e.target === cookieFile) return;
         cookieFile.click();
+    });
+
+    // Drag-and-drop support on the dropzone
+    const dropzone = btnUploadCookie;
+    dropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => {
+        dropzone.classList.remove('dragover');
+    });
+    dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file) {
+            // Simulate file input change
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            cookieFile.files = dt.files;
+            cookieFile.dispatchEvent(new Event('change'));
+        }
     });
 
     cookieFile.addEventListener('change', async (e) => {
@@ -1584,8 +1659,15 @@
             // Save token to localStorage
             AuthStorage.save(token);
 
-            // Validate token against the server
-            const result = await api.connectAuth();
+            // Validate token against the server (retry once on failure)
+            let result;
+            try {
+                result = await api.connectAuth();
+            } catch {
+                // Server may need a moment to register — retry after a short delay
+                await new Promise(r => setTimeout(r, 1500));
+                result = await api.connectAuth();
+            }
             updateAuthBadge(result);
             updateCookieStatus();
             toast('Authenticated successfully', 'success');
@@ -1608,18 +1690,20 @@
             return;
         }
 
+        const originalHTML = btnConnect.innerHTML;
         try {
-            btnConnect.textContent = 'Connecting…';
+            btnConnect.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Connecting…`;
             btnConnect.disabled = true;
             const result = await api.connectAuth();
             updateAuthBadge(result);
+            updateCookieStatus();
             toast('Connected successfully', 'success');
             // Start/restart SSE now that we have a valid token
             eventStream.connect();
         } catch (e) {
             toast(e.message || 'Connection failed', 'error');
         } finally {
-            btnConnect.textContent = 'Connect';
+            btnConnect.innerHTML = originalHTML;
             btnConnect.disabled = false;
         }
     });
@@ -1739,23 +1823,26 @@
         // Check auth status
         await checkAuth();
 
-        // Load existing downloads
-        try {
-            const existingJobs = await api.getDownloads();
-            for (const job of existingJobs) {
-                jobs[job.job_id] = job;
-                renderJob(job);
-                // Mark completed jobs so they don't trigger auto-download on SSE reconnect
-                if (job.stage === 'done') {
-                    _savedJobs.add(job.job_id);
+        // Only load downloads & connect SSE if authenticated
+        if (AuthStorage.hasToken()) {
+            // Load existing downloads
+            try {
+                const existingJobs = await api.getDownloads();
+                for (const job of existingJobs) {
+                    jobs[job.job_id] = job;
+                    renderJob(job);
+                    // Mark completed jobs so they don't trigger auto-download on SSE reconnect
+                    if (job.stage === 'done') {
+                        _savedJobs.add(job.job_id);
+                    }
                 }
+            } catch (e) {
+                console.error('Failed to load downloads:', e);
             }
-        } catch (e) {
-            console.error('Failed to load downloads:', e);
-        }
 
-        // Connect SSE event stream
-        eventStream.connect();
+            // Connect SSE event stream
+            eventStream.connect();
+        }
 
         // Fetch system stats immediately
         fetchSystemStats();

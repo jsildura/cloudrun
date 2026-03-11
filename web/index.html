@@ -117,19 +117,74 @@
             <div class="modal-body">
                 <div class="settings-group">
                     <h3>Authentication</h3>
-                    <div class="field">
-                        <label>Cookies File</label>
-                        <div class="cookie-upload" id="cookie-upload">
-                            <input type="file" id="cookie-file" accept=".txt" hidden>
-                            <button type="button" class="btn-secondary" id="btn-upload-cookie">
-                                Place cookies.txt
-                            </button>
-                            <span class="cookie-status" id="cookie-status">No file selected</span>
+
+                    <!-- Connection status card -->
+                    <div class="auth-status-card" id="auth-status-card">
+                        <div class="auth-status-icon" id="auth-status-icon">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                            </svg>
+                        </div>
+                        <div class="auth-status-text">
+                            <span class="auth-status-label" id="auth-status-label">Not Connected</span>
+                            <span class="auth-status-detail" id="auth-status-detail">Upload cookies.txt to
+                                connect</span>
                         </div>
                     </div>
-                    <button type="button" class="btn-secondary" id="btn-sign-out"
-                        style="display: none">Disconnect</button>
-                    <button type="button" class="btn-secondary" id="btn-connect">Reconnect</button>
+
+                    <!-- Cookie upload drop zone -->
+                    <div class="cookie-dropzone" id="cookie-upload">
+                        <input type="file" id="cookie-file" accept=".txt" hidden>
+                        <svg class="cookie-dropzone-icon" width="28" height="28" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                        <span class="cookie-dropzone-text">Drop <strong>cookies.txt</strong> here or click to
+                            browse</span>
+                        <span class="cookie-status" id="cookie-status"></span>
+                    </div>
+
+                    <!-- Action buttons -->
+                    <div class="auth-actions">
+                        <button type="button" class="btn-auth btn-auth-disconnect" id="btn-sign-out"
+                            style="display: none">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                                <polyline points="16 17 21 12 16 7" />
+                                <line x1="21" y1="12" x2="9" y2="12" />
+                            </svg>
+                            Disconnect
+                        </button>
+                        <button type="button" class="btn-auth btn-auth-reconnect" id="btn-connect">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                            </svg>
+                            Reconnect
+                        </button>
+                    </div>
+
+                    <div class="cookie-guide">
+                        <p><strong>Apple Music Cookies</strong> — Export your browser cookies in Netscape format while
+                            logged in with an active subscription at the <a href="https://music.apple.com"
+                                target="_blank" rel="noopener">Apple Music website</a>. <br>Exported cookies must be
+                            renamed
+                            to
+                            <strong>cookies.txt</strong>.
+                        </p>
+                        <ul>
+                            <li><strong>Firefox:</strong> <a href="https://addons.mozilla.org/addon/export-cookies-txt"
+                                    target="_blank" rel="noopener">Export Cookies</a></li>
+                            <li><strong>Chromium:</strong> <a
+                                    href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
+                                    target="_blank" rel="noopener">Get cookies.txt LOCALLY</a></li>
+                        </ul>
+                    </div>
                 </div>
 
                 <div class="settings-group">
@@ -270,16 +325,29 @@
 
                 <div class="settings-group">
                     <h3>Templates</h3>
+                    <h4 style="margin:0 0 6px;opacity:.55;font-size:.85rem">Compressed File Naming</h4>
                     <div class="field">
-                        <label for="cfg-album-folder-template">Album Folder</label>
-                        <input type="text" class="text-input" id="cfg-album-folder-template"
-                            placeholder="{album_artist}/{album}">
+                        <label for="cfg-compressed-album-template">Album ZIP Name</label>
+                        <input type="text" class="text-input" id="cfg-compressed-album-template"
+                            placeholder="{album} - {album_artist}">
                     </div>
                     <div class="field">
-                        <label for="cfg-compilation-folder-template">Compilation Folder</label>
-                        <input type="text" class="text-input" id="cfg-compilation-folder-template"
-                            placeholder="Compilations/{album}">
+                        <label for="cfg-compressed-single-template">Single Song ZIP Name</label>
+                        <input type="text" class="text-input" id="cfg-compressed-single-template"
+                            placeholder="{title} - {album_artist}">
                     </div>
+                    <div class="field">
+                        <label for="cfg-compressed-playlist-template">Playlist ZIP Name</label>
+                        <input type="text" class="text-input" id="cfg-compressed-playlist-template"
+                            placeholder="{playlist} - {album_artist}">
+                    </div>
+                    <span class="help-text">Customize the .zip filename for each download type.<br>
+                        Available: <strong>{title}</strong>, <strong>{artist}</strong>, <strong>{album}</strong>,
+                        <strong>{album_artist}</strong>, <strong>{playlist}</strong>,
+                        <strong>{playlist_artist}</strong>.
+                        <br>Artist is omitted automatically when unavailable.</span>
+
+                    <h4 style="margin:12px 0 6px;opacity:.55;font-size:.85rem">File Naming Inside ZIP</h4>
                     <div class="field">
                         <label for="cfg-single-disc-file-template">Single-Disc File</label>
                         <input type="text" class="text-input" id="cfg-single-disc-file-template"
@@ -295,12 +363,12 @@
                         <input type="text" class="text-input" id="cfg-playlist-file-template"
                             placeholder="Playlists/{playlist_artist}/{playlist_title}">
                     </div>
-                    <span class="help-text">Available placeholders:
-                        <strong>{title}</strong>,<strong>{artist}</strong>,<strong>{album}</strong>,
+                    <span class="help-text">Controls filenames within the ZIP.<br>
+                        Available: <strong>{title}</strong>, <strong>{artist}</strong>, <strong>{album}</strong>,
                         <strong>{album_artist}</strong>,
                         <strong>{track}</strong>, <strong>{disc}</strong>, <strong>{year}</strong>,
                         <strong>{genre}</strong>, <strong>{playlist_title}</strong>, <strong>{playlist_artist}</strong>.
-                        <br><br>Use <strong>{track:02d}</strong> for zero-padded numbers.</span>
+                        <br>Use <strong>{track:02d}</strong> for zero-padded numbers.</span>
                 </div>
 
                 <div class="settings-group">
