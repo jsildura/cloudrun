@@ -31,7 +31,7 @@ class GamdlApi {
         });
 
         if (!res.ok) {
-            let detail = res.statusText;
+            let detail = res.statusText || `Request failed (HTTP ${res.status})`;
             try {
                 const body = await res.json();
                 detail = body.detail || detail;

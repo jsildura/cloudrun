@@ -1674,9 +1674,10 @@
             // Start/restart SSE now that we have a valid token
             eventStream.connect();
         } catch (err) {
-            cookieStatus.textContent = `Failed: ${err.message}`;
+            const msg = err.message || 'Connection failed — try again';
+            cookieStatus.textContent = `Failed: ${msg}`;
             cookieStatus.classList.remove('success');
-            toast(err.message || 'Cookie parsing failed', 'error');
+            toast(msg, 'error');
         }
 
         // Reset file input so the same file can be re-selected
