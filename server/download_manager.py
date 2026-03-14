@@ -585,8 +585,11 @@ class DownloadManager:
             _download_semaphore.release()
             # Record finish time for stale eviction
             self._job_finish_times[job_id] = time.time()
-            # In cloud mode, files are already in R2 — clean up immediately
-            if config.cloud_mode:
+            # Only clean up immediately if files were actually uploaded to R2
+            # (cloud_mode ON *and* storage client available).
+            # If cloud_mode is on but R2 credentials are missing, files stay
+            # on local disk and the frontend still needs to fetch them.
+            if config.cloud_mode and self._storage:
                 self._cleanup_job(job_id)
 
     async def _process_job_inner(
