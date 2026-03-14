@@ -98,6 +98,12 @@ class GamdlApi {
         });
     }
 
+    async cleanupJob(jobId) {
+        return this._fetch(`/api/downloads/${jobId}/cleanup`, {
+            method: 'POST',
+        });
+    }
+
     // ── Config ────────────────────────────────────────────────────────────
 
     async getConfig() {

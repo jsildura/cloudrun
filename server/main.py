@@ -3,6 +3,7 @@ FastAPI application entry point for the gamdl web server.
 Serves both the REST API and the static frontend.
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -23,6 +24,18 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
 )
+
+_CLEANUP_INTERVAL = 60  # seconds
+
+
+async def _periodic_cleanup_loop() -> None:
+    """Background loop: runs every 60s to evict stale jobs and free disk/RAM."""
+    while True:
+        await asyncio.sleep(_CLEANUP_INTERVAL)
+        try:
+            await api_routes.run_periodic_cleanup()
+        except Exception:
+            logger.exception("Periodic cleanup error (non-fatal)")
 
 
 @asynccontextmanager
@@ -54,8 +67,18 @@ async def lifespan(app: FastAPI):
 
     # SSE routes import per-user DMs from api_routes directly — no injection needed.
 
+    # Start background cleanup loop (safety net for abandoned sessions)
+    cleanup_task = asyncio.create_task(_periodic_cleanup_loop())
+    logger.info("Background cleanup loop started (every %ds)", _CLEANUP_INTERVAL)
+
     yield
 
+    # Cancel background cleanup loop
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
     logger.info("Shutting down gamdl web server...")
 
 

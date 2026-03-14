@@ -1074,6 +1074,12 @@
         delete _lyricsBlobPromises[job.job_id];
         delete _coverBlobs[job.job_id];
         delete _coverBlobPromises[job.job_id];
+
+        // Signal backend to delete temp files now that saving is complete
+        // Fire-and-forget — don't block on the response
+        api.cleanupJob(job.job_id).catch(err => {
+            console.warn('[App] Cleanup signal failed (non-critical):', err);
+        });
     }
 
     function escapeHtml(str) {

@@ -55,8 +55,8 @@ _waiting_jobs: list[tuple[str, object]] = []
 # Minimum free disk space (bytes) required to start a download
 _MIN_FREE_DISK_BYTES = 200 * 1024 * 1024  # 200 MB
 
-# How long to keep completed jobs in memory before eviction
-_STALE_JOB_TTL = 600  # 10 minutes
+# How long to keep completed jobs in memory before eviction (safety net)
+_STALE_JOB_TTL = 300  # 5 minutes — primary cleanup is event-driven from frontend
 
 
 class DownloadManager:

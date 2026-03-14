@@ -308,6 +308,45 @@ async def retry_all_failed(job_id: str, request: Request) -> dict:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/downloads/{job_id}/cleanup")
+async def cleanup_job(job_id: str, request: Request) -> dict:
+    """Frontend signals that saving is complete — safe to delete temp files."""
+    token = _extract_token(request)
+    dm = _get_user_dm(token)
+
+    job = dm.jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    dm._cleanup_job(job_id)
+    logger.info("Cleanup signal received for job %s — temp files deleted", job_id)
+    return {"status": "cleaned", "job_id": job_id}
+
+
+async def run_periodic_cleanup() -> None:
+    """Proactive cleanup: evict stale jobs and user managers.
+
+    Called by the background loop in main.py every 60 seconds.
+    """
+    now = time.time()
+
+    # 1. Evict stale jobs across all user managers
+    for key, dm in list(_user_managers.items()):
+        dm._evict_stale_jobs()
+
+    # 2. Evict stale user managers (no API activity for 30+ min)
+    stale_keys = [
+        k for k, ts in _user_last_access.items()
+        if now - ts > _USER_MANAGER_TTL
+    ]
+    for k in stale_keys:
+        dm = _user_managers.pop(k, None)
+        if dm:
+            for jid in list(dm._job_temp_dirs.keys()):
+                dm._cleanup_job(jid)
+            logger.info("Periodic cleanup: evicted stale user manager %s", k)
+        _user_last_access.pop(k, None)
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 
