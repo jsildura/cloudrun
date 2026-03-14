@@ -29,6 +29,8 @@ router = APIRouter(prefix="/api")
 
 # ── Per-user state (keyed by hashed token) ────────────────────────────────────
 _user_managers: dict[str, DownloadManager] = {}
+_user_last_access: dict[str, float] = {}  # key -> last access timestamp
+_USER_MANAGER_TTL = 1800  # 30 minutes — evict idle user managers
 
 # ── Cloud storage instance (set by main.py at startup when cloud_mode=True) ───
 cloud_storage: CloudStorage | None = None
@@ -55,6 +57,24 @@ def _extract_token(request: Request) -> str:
 def _get_user_dm(token: str) -> DownloadManager:
     """Get or create a per-user DownloadManager."""
     key = hashlib.sha256(token.encode()).hexdigest()[:16]
+
+    # Evict stale user managers to free memory
+    now = time.time()
+    stale_keys = [
+        k for k, ts in _user_last_access.items()
+        if now - ts > _USER_MANAGER_TTL and k != key
+    ]
+    for k in stale_keys:
+        dm = _user_managers.pop(k, None)
+        if dm:
+            # Clean up any remaining temp dirs
+            for jid in list(dm._job_temp_dirs.keys()):
+                dm._cleanup_job(jid)
+            logger.info("Evicted stale user manager: %s", k)
+        _user_last_access.pop(k, None)
+
+    _user_last_access[key] = now
+
     if key not in _user_managers:
         dm = DownloadManager()
         if cloud_storage:

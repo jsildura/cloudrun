@@ -6,6 +6,7 @@ with real-time progress tracking via SSE broadcast.
 
 import asyncio
 import logging
+import shutil
 import tempfile
 import time
 import traceback
@@ -45,6 +46,19 @@ from .models import DownloadJob, DownloadStage, PreviewResponse, PreviewTrack, T
 logger = logging.getLogger(__name__)
 
 
+# Global concurrency semaphore — max 2 download jobs running at once across all users
+_download_semaphore = asyncio.Semaphore(2)
+
+# Ordered list of (job_id, DownloadJob) tuples currently waiting for a slot
+_waiting_jobs: list[tuple[str, object]] = []
+
+# Minimum free disk space (bytes) required to start a download
+_MIN_FREE_DISK_BYTES = 200 * 1024 * 1024  # 200 MB
+
+# How long to keep completed jobs in memory before eviction
+_STALE_JOB_TTL = 600  # 10 minutes
+
+
 class DownloadManager:
     """Manages download jobs with progress tracking and SSE broadcast."""
 
@@ -53,6 +67,7 @@ class DownloadManager:
         self._job_configs: dict[str, ServerConfig] = {}
         self._job_temp_dirs: dict[str, str] = {}  # job_id -> temp dir path
         self._job_tasks: dict[str, asyncio.Task] = {}  # job_id -> asyncio.Task
+        self._job_finish_times: dict[str, float] = {}  # job_id -> completion timestamp
         self._ws_clients: set[asyncio.Queue] = set()
         self._apple_music_api: AppleMusicApi | None = None
         self._itunes_api: ItunesApi | None = None
@@ -449,8 +464,60 @@ class DownloadManager:
         self._preview_cache[cache_key] = (time.time(), response)
         return response
 
+    def _cleanup_job(self, job_id: str) -> None:
+        """Remove temp directory and in-memory caches for a completed job."""
+        # Remove temp directory from disk
+        temp_dir = self._job_temp_dirs.pop(job_id, None)
+        if temp_dir:
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                logger.info("Cleaned up temp dir for job %s: %s", job_id, temp_dir)
+            except Exception as e:
+                logger.warning("Failed to clean temp dir %s: %s", temp_dir, e)
+
+        # Remove cached download queue (can be large)
+        self._job_download_queues.pop(job_id, None)
+
+        # Remove stored config
+        self._job_configs.pop(job_id, None)
+
+        # Remove task reference
+        self._job_tasks.pop(job_id, None)
+
+    def _evict_stale_jobs(self) -> None:
+        """Remove completed/cancelled/errored jobs older than _STALE_JOB_TTL."""
+        now = time.time()
+        stale_ids = [
+            jid for jid, ts in self._job_finish_times.items()
+            if now - ts > _STALE_JOB_TTL
+        ]
+        for jid in stale_ids:
+            self._cleanup_job(jid)
+            self.jobs.pop(jid, None)
+            self._job_finish_times.pop(jid, None)
+            logger.info("Evicted stale job %s", jid)
+
+    @staticmethod
+    def _check_disk_space() -> bool:
+        """Return True if there is enough free disk space to start a download."""
+        try:
+            usage = shutil.disk_usage('/tmp')
+            return usage.free >= _MIN_FREE_DISK_BYTES
+        except Exception:
+            return True  # If we can't check, allow the download
+
     async def submit_download(self, url: str, config: ServerConfig) -> DownloadJob:
         """Submit a new download job. Returns the job immediately."""
+        # Evict old completed jobs to free memory
+        self._evict_stale_jobs()
+
+        # Pre-check disk space
+        if not self._check_disk_space():
+            raise ValueError(
+                "Server disk space is running low. "
+                "Please wait for current downloads to finish and try again."
+            )
+
         job_id = str(uuid.uuid4())[:8]
         job = DownloadJob(
             job_id=job_id,
@@ -470,6 +537,62 @@ class DownloadManager:
         self, job_id: str, url: str, config: ServerConfig
     ) -> None:
         """Process a single download job end-to-end."""
+        job = self.jobs[job_id]
+
+        # Wait for a download slot (max 2 concurrent downloads globally)
+        if _download_semaphore.locked():
+            # Add to global waiting list for position tracking
+            _waiting_jobs.append((job_id, job))
+            job.stage = DownloadStage.QUEUED
+            position = len(_waiting_jobs)
+            job.error_message = (
+                f"Position {position} in queue \u2014 "
+                f"the server is currently processing other downloads. "
+                f"Your download will start automatically in just a moment. "
+                f"Please keep this page open."
+            )
+            await self._broadcast_job(job)
+
+            # Update queue position every 3s while waiting
+            async def _update_position():
+                while (job_id, job) in _waiting_jobs:
+                    await asyncio.sleep(3)
+                    if (job_id, job) not in _waiting_jobs:
+                        break
+                    pos = _waiting_jobs.index((job_id, job)) + 1
+                    job.error_message = (
+                        f"Position {pos} in queue \u2014 "
+                        f"the server is currently processing other downloads. "
+                        f"Your download will start automatically in just a moment. "
+                        f"Please keep this page open."
+                    )
+                    await self._broadcast_job(job)
+
+            position_task = asyncio.create_task(_update_position())
+
+        await _download_semaphore.acquire()
+        # Remove from waiting list and cancel position updater
+        if (job_id, job) in _waiting_jobs:
+            _waiting_jobs.remove((job_id, job))
+        try:
+            position_task.cancel()
+        except UnboundLocalError:
+            pass  # Was never queued (semaphore was free)
+        try:
+            job.error_message = None  # Clear queue message
+            await self._process_job_inner(job_id, url, config)
+        finally:
+            _download_semaphore.release()
+            # Record finish time for stale eviction
+            self._job_finish_times[job_id] = time.time()
+            # In cloud mode, files are already in R2 — clean up immediately
+            if config.cloud_mode:
+                self._cleanup_job(job_id)
+
+    async def _process_job_inner(
+        self, job_id: str, url: str, config: ServerConfig
+    ) -> None:
+        """Inner download logic, called within the semaphore."""
         job = self.jobs[job_id]
         try:
             # 1. Parse URL
@@ -845,15 +968,26 @@ class DownloadManager:
                         job.error_message = "Completed with errors"
             await self._broadcast_job(job)
 
+            # Non-cloud mode: schedule cleanup after 15 minutes
+            if not config.cloud_mode:
+                asyncio.get_event_loop().call_later(
+                    900,  # 15 minutes
+                    lambda jid=job_id: self._cleanup_job(jid),
+                )
+
         except asyncio.CancelledError:
             job.stage = DownloadStage.CANCELLED
             logger.info(f"Job {job_id} cancelled")
             await self._broadcast_job(job)
+            # Clean up cancelled job's temp dir immediately
+            self._cleanup_job(job_id)
         except Exception as e:
             job.stage = DownloadStage.ERROR
             job.error_message = str(e)
             logger.error(f"Job {job_id} failed: {e}", exc_info=True)
             await self._broadcast_job(job)
+            # Clean up errored job's temp dir immediately
+            self._cleanup_job(job_id)
 
     def cancel_job(self, job_id: str) -> bool:
         """Cancel a running job."""
