@@ -841,11 +841,13 @@
         const map = {
             'aac-legacy':      'AAC 256kbps',
             'aac-he-legacy':   'AAC-HE 64kbps',
+            'aac':             'AAC 256kbps 48kHz',
+            'aac-he':          'AAC-HE 64kbps 48kHz',
             'aac-binaural':    'AAC Binaural',
             'aac-downmix':     'AAC Downmix',
             'atmos':           'Dolby Atmos',
-            'ac3':             'AC-3',
-            'alac':            'ALAC',
+            'ac3':             'AC3 640kbps',
+            'alac':            'ALAC Lossless',
             'ask':             'Ask',
         };
         return map[codec] || codec || 'Unknown';
@@ -865,12 +867,12 @@
                 <div class="history-item-info">
                     <span class="history-item-title">${escapeHtml(item.title)}</span>
                     <span class="history-item-artist">${escapeHtml(item.artist)}</span>
+                    <div class="history-item-badges">
+                        <span class="history-badge type-badge">${escapeHtml(item.type)}</span>
+                        <span class="history-badge codec-badge">${escapeHtml(item.codec)}</span>
+                    </div>
                 </div>
-                <div class="history-item-meta">
-                    <span class="history-badge type-badge">${escapeHtml(item.type)}</span>
-                    <span class="history-badge codec-badge">${escapeHtml(item.codec)}</span>
-                    <span class="history-item-date">${escapeHtml(item.date)}</span>
-                </div>
+                <span class="history-item-date">${escapeHtml(item.date)}</span>
             </div>
         `).join('');
     }
