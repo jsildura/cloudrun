@@ -3,6 +3,9 @@
 	"compatibility_date": "2025-09-27",
 	"pages_build_output_dir": "./web",
 	"vars": {
-		"API_URL": "https://amdlxd.duckdns.org"
+		"API_URL": "https://amdlxd.duckdns.org",
+		"FIREBASE_API_KEY": "AIzaSyAjqU-DdNzJEiWELLi88kEA-XOfhvBbIyI",
+		"FIREBASE_PROJECT_ID": "amdlxd-history-9553f",
+		"FIREBASE_APP_ID": "1:873970347748:web:a7efe8b2d7adf2be5a06f1"
 	}
 }

@@ -9,6 +9,9 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="api-url" content="">
+    <meta name="firebase-api-key" content="">
+    <meta name="firebase-project-id" content="">
+    <meta name="firebase-app-id" content="">
     <title>Amdlxd</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -104,6 +107,15 @@
         <section class="queue-section" id="queue-section">
             <h2 class="queue-title">Downloads</h2>
             <div class="queue-list" id="queue-list">
+            </div>
+        </section>
+
+        <section class="history-section" id="history-section">
+            <div class="history-header">
+                <h2 class="history-title">Recent Downloads</h2>
+            </div>
+            <div class="history-list" id="history-list">
+                <p class="history-empty">No downloads yet.</p>
             </div>
         </section>
     </main>
@@ -435,11 +447,17 @@
         <span class="stat-item" id="stat-ram">RAM: –/– MB</span>
         <span class="stat-divider">|</span>
         <span class="stat-item" id="stat-swap">SWAP: –/– MB</span>
+        <span class="stat-divider" id="stat-downloads-divider" style="display:none">|</span>
+        <span class="stat-item stat-downloads" id="stat-downloads" style="display:none">Downloads: 0</span>
     </div>
 
+    <script src="https://www.gstatic.com/firebasejs/11.5.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.5.0/firebase-firestore-compat.js"></script>
     <script src="/js/auth-storage.js"></script>
     <script src="/js/api.js"></script>
     <script src="/js/events.js"></script>
+    <script src="/js/firebase-config.js"></script>
+    <script src="/js/download-history.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"
         referrerpolicy="no-referrer"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>

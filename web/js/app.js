@@ -21,6 +21,13 @@
     const queueSection = $('#queue-section');
     const queueList = $('#queue-list');
 
+    // History section
+    const historySection = $('#history-section');
+    const historyList = $('#history-list');
+    const btnClearHistory = $('#btn-clear-history');
+    const statDownloads = $('#stat-downloads');
+    const statDownloadsDivider = $('#stat-downloads-divider');
+
     // Status container
     const statusContainer = $('#status-container');
 
@@ -653,6 +660,43 @@
     }
 
 
+    // ── Codec display label helper ─────────────────────────────────────────
+    function getCodecLabel(codecValue) {
+        const labels = {
+            'aac-legacy': 'AAC 256kbps',
+            'aac-he-legacy': 'AAC-HE 64kbps',
+            'aac': 'AAC 256kbps 48kHz',
+            'aac-he': 'AAC-HE 64kbps 48kHz',
+            'aac-binaural': 'AAC Binaural',
+            'aac-downmix': 'AAC Downmix',
+            'atmos': 'Dolby Atmos',
+            'ac3': 'AC3 640kbps',
+            'alac': 'ALAC Lossless',
+        };
+        return labels[codecValue] || codecValue || 'AAC 256kbps';
+    }
+
+    // ── History rendering ──────────────────────────────────────────────────
+    function renderHistoryList(items) {
+        if (!historyList) return;
+        if (!items || items.length === 0) {
+            historyList.innerHTML = '<p class="history-empty">No downloads yet.</p>';
+            return;
+        }
+        historyList.innerHTML = items.map(item => `
+            <div class="history-item">
+                <div class="history-item-info">
+                    <div class="history-item-title">${escapeHtml(item.title || 'Unknown')}</div>
+                    <div class="history-item-artist">${escapeHtml(item.artist || 'Unknown')}</div>
+                    <div class="history-item-badges">
+                        <span class="history-badge type-badge">${escapeHtml(item.type || 'Track')}</span>
+                        <span class="history-badge codec-badge">${escapeHtml(item.codec || '')}</span>
+                    </div>
+                </div>
+                <span class="history-item-date">${escapeHtml(item.date || '')}</span>
+            </div>
+        `).join('');
+    }
 
     function attachRetryAllHandler(card, jobId) {
         const retryAllBtn = card.querySelector('.btn-retry-all');
@@ -1080,6 +1124,30 @@
         api.cleanupJob(job.job_id).catch(err => {
             console.warn('[App] Cleanup signal failed (non-critical):', err);
         });
+
+        // ── Record download to Firestore (fire-and-forget) ──
+        if (typeof addDownloadHistory === 'function') {
+            const mediaType = _previewMediaType || (job.tracks?.length === 1 ? 'song' : 'album');
+            const typeLabel = mediaType === 'song' ? 'Track'
+                : mediaType === 'playlist' ? 'Playlist'
+                : mediaType === 'music-video' ? 'Music Video'
+                : 'Album';
+            const userCfg = loadLocalSettings();
+            const historyItem = {
+                title: previewTitle?.textContent?.trim() || job.tracks?.[0]?.title || 'Unknown',
+                artist: previewArtist?.textContent?.trim() || job.tracks?.[0]?.artist || 'Unknown',
+                type: typeLabel,
+                codec: getCodecLabel(userCfg.song_codec),
+                date: new Date().toLocaleDateString() + ' ' +
+                      new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            };
+            addDownloadHistory(historyItem).catch(err =>
+                console.warn('[App] History save failed:', err)
+            );
+            incrementDownloadCount().catch(err =>
+                console.warn('[App] Stats update failed:', err)
+            );
+        }
     }
 
     function escapeHtml(str) {
@@ -1853,6 +1921,32 @@
 
         // Fetch system stats immediately
         fetchSystemStats();
+
+        // ── Firebase: Subscribe to download history & counter ──
+        if (typeof subscribeToDownloadHistory === 'function') {
+            subscribeToDownloadHistory((items) => {
+                renderHistoryList(items);
+            }, 5);
+        }
+        if (typeof subscribeToDownloadCount === 'function') {
+            subscribeToDownloadCount((count) => {
+                if (count > 0 && statDownloads && statDownloadsDivider) {
+                    statDownloads.textContent = `Downloads: ${count.toLocaleString()}`;
+                    statDownloads.style.display = '';
+                    statDownloadsDivider.style.display = '';
+                }
+            });
+        }
+
+        // Clear history button
+        if (btnClearHistory) {
+            btnClearHistory.addEventListener('click', async () => {
+                if (typeof clearDownloadHistory === 'function') {
+                    await clearDownloadHistory();
+                    toast('History cleared', 'info');
+                }
+            });
+        }
 
         // Focus input
         urlInput.focus();

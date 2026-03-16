@@ -2070,6 +2070,155 @@ a:hover {
     text-decoration: underline;
 }
 
+/* ── Download History Section ──────────────────────────────────────────────── */
+.history-section {
+    margin-top: 32px;
+    animation: fadeSlideUp 0.3s ease;
+}
+
+.history-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.history-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: inherit;
+    letter-spacing: 0.05em;
+}
+
+.history-clear-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-family: var(--font);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    -webkit-tap-highlight-color: transparent;
+}
+
+.history-clear-btn:hover {
+    background: rgba(255, 55, 95, 0.1);
+    color: var(--accent-hover);
+}
+
+.history-clear-btn:active {
+    transform: scale(0.95);
+}
+
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.history-empty {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 24px 0;
+}
+
+.history-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    transition: background var(--transition-fast);
+    animation: historyFadeIn 0.35s ease;
+}
+
+.history-item:hover {
+    background: var(--bg-hover);
+}
+
+.history-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.history-item-title {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.history-item-artist {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 2px;
+}
+
+.history-item-badges {
+    display: flex;
+    gap: 6px;
+    margin-top: 5px;
+    flex-wrap: wrap;
+}
+
+.history-badge {
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 100px;
+    text-transform: capitalize;
+    white-space: nowrap;
+}
+
+.history-badge.type-badge {
+    background: rgba(255, 43, 92, 0.12);
+    color: #ff375f;
+}
+
+.history-badge.codec-badge {
+    background: rgba(255, 43, 92, 0.12);
+    color: #ff375f;
+}
+
+.history-item-date {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+@keyframes historyFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ── Download Counter in Stats Bar ─────────────────────────────────────────── */
+.stat-downloads {
+    color: var(--accent);
+    font-weight: 500;
+}
+
+
 @media (max-width: 600px) {
     .system-stats-bar {
         font-size: 0.6rem;
