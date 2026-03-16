@@ -832,6 +832,49 @@
         return promise;
     }
 
+    // ── Download history helpers ─────────────────────────────────────────
+
+    /**
+     * Map codec values to human-readable labels for display in history.
+     */
+    function getCodecLabel(codec) {
+        const map = {
+            'aac-legacy':      'AAC 256kbps',
+            'aac-he-legacy':   'AAC-HE 64kbps',
+            'aac-binaural':    'AAC Binaural',
+            'aac-downmix':     'AAC Downmix',
+            'atmos':           'Dolby Atmos',
+            'ac3':             'AC-3',
+            'alac':            'ALAC',
+            'ask':             'Ask',
+        };
+        return map[codec] || codec || 'Unknown';
+    }
+
+    /**
+     * Render the download history list in the UI.
+     */
+    function renderHistoryList(items) {
+        if (!historyList) return;
+        if (!items || items.length === 0) {
+            historyList.innerHTML = '<p class="history-empty">No downloads yet.</p>';
+            return;
+        }
+        historyList.innerHTML = items.map(item => `
+            <div class="history-item">
+                <div class="history-item-info">
+                    <span class="history-item-title">${escapeHtml(item.title)}</span>
+                    <span class="history-item-artist">${escapeHtml(item.artist)}</span>
+                </div>
+                <div class="history-item-meta">
+                    <span class="history-badge type-badge">${escapeHtml(item.type)}</span>
+                    <span class="history-badge codec-badge">${escapeHtml(item.codec)}</span>
+                    <span class="history-item-date">${escapeHtml(item.date)}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
     /**
      * Trigger native browser save dialog from an in-memory Blob.
      */
