@@ -133,10 +133,16 @@ class AppleMusicApi:
         response = await self.client.get(APPLE_MUSIC_HOMEPAGE_URL)
         home_page = response.text
 
+        # Try modern bundle first (Apple moved the token here), fall back to legacy
         index_js_uri_match = re.search(
-            r"/(assets/index-legacy[~-][^/\"]+\.js)",
+            r"/(assets/index~[^/\"]+\.js)",
             home_page,
         )
+        if not index_js_uri_match:
+            index_js_uri_match = re.search(
+                r"/(assets/index-legacy[~-][^/\"]+\.js)",
+                home_page,
+            )
         if not index_js_uri_match:
             raise Exception("index.js URI not found in Apple Music homepage")
         index_js_uri = index_js_uri_match.group(1)
@@ -144,7 +150,7 @@ class AppleMusicApi:
         response = await self.client.get(f"{APPLE_MUSIC_HOMEPAGE_URL}/{index_js_uri}")
         index_js_page = response.text
 
-        token_match = re.search('(?=eyJh)(.*?)(?=")', index_js_page)
+        token_match = re.search('(?=eyJ)(.*?)(?=")', index_js_page)
         if not token_match:
             raise Exception("Token not found in index.js page")
         token = token_match.group(1)
