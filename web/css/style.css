@@ -107,9 +107,32 @@ a:hover {
 .header-icons {
     position: absolute;
     top: 40px;
+    left: 0;
     right: 0;
     display: flex;
+    justify-content: flex-end;
     gap: 6px;
+}
+
+.header-logo {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    transition: color var(--transition-normal);
+}
+
+.header-logo svg {
+    width: 22px;
+    height: 26px;
+}
+
+.header-logo:hover {
+    color: var(--text-secondary);
 }
 
 .icon-btn {
