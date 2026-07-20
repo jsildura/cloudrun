@@ -160,45 +160,97 @@ a:hover {
 }
 
 
-/* ── Auth Badge ────────────────────────────────────────────────────────────── */
+/* ── Auth Badge (3-dot traffic light) ──────────────────────────────────────── */
 .auth-badge {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 14px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 100px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--text-secondary);
+    gap: 6px;
+    position: relative;
     margin-top: 6px;
     margin-bottom: 24px;
-    transition: all var(--transition-fast);
+    cursor: default;
+    padding: 4px;
 }
-
-
 
 .auth-dot {
-    width: 7px;
-    height: 7px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
-    background: var(--error);
-    transition: background var(--transition-normal);
+    transition: opacity 0.3s ease, box-shadow 0.3s ease;
+    opacity: 0.25;
 }
 
-.auth-badge.connected .auth-dot {
+.auth-dot.dot-red {
+    background: var(--error);
+}
+
+.auth-dot.dot-yellow {
+    background: var(--warning);
+}
+
+.auth-dot.dot-green {
     background: var(--success);
+}
+
+/* Default state: not connected — red active */
+.auth-badge .dot-red {
+    opacity: 1;
+    box-shadow: 0 0 6px rgba(255, 69, 58, 0.5);
+}
+
+/* Degraded state: no subscription or restricted — yellow active */
+.auth-badge.degraded .dot-red {
+    opacity: 0.25;
+    box-shadow: none;
+}
+
+.auth-badge.degraded .dot-yellow {
+    opacity: 1;
+    box-shadow: 0 0 6px rgba(255, 214, 10, 0.5);
+}
+
+/* Connected state: full access — green active */
+.auth-badge.connected .dot-red {
+    opacity: 0.25;
+    box-shadow: none;
+}
+
+.auth-badge.connected .dot-green {
+    opacity: 1;
     box-shadow: 0 0 6px rgba(48, 209, 88, 0.5);
 }
 
-.auth-badge.connected {
-    color: var(--success);
-    border-color: rgba(48, 209, 88, 0.2);
+/* Custom tooltip */
+.auth-tooltip {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(30, 30, 34, 0.95);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--text-primary);
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 10;
 }
 
-.auth-badge.restricted .auth-dot {
-    background: var(--warning);
+.auth-badge:hover .auth-tooltip {
+    opacity: 1;
+}
+
+@media (max-width: 480px) {
+    .auth-tooltip {
+        left: 0;
+        transform: none;
+    }
 }
 
 
@@ -2141,7 +2193,7 @@ a:hover {
 .history-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
 }
 
 .history-empty {
@@ -2155,8 +2207,8 @@ a:hover {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 12px 16px;
+    gap: 10px;
+    padding: 8px 12px;
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
@@ -2176,7 +2228,7 @@ a:hover {
 
 .history-item-title {
     display: block;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     font-weight: 500;
     color: var(--text-primary);
     overflow: hidden;
@@ -2186,25 +2238,25 @@ a:hover {
 
 .history-item-artist {
     display: block;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    margin-top: 2px;
+    margin-top: 1px;
 }
 
 .history-item-badges {
     display: flex;
-    gap: 6px;
-    margin-top: 5px;
+    gap: 4px;
+    margin-top: 3px;
     flex-wrap: wrap;
 }
 
 .history-badge {
-    font-size: 0.65rem;
+    font-size: 0.6rem;
     font-weight: 500;
-    padding: 2px 8px;
+    padding: 1px 6px;
     border-radius: 100px;
     text-transform: capitalize;
     white-space: nowrap;
@@ -2221,7 +2273,7 @@ a:hover {
 }
 
 .history-item-date {
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     color: var(--text-muted);
     white-space: nowrap;
     flex-shrink: 0;

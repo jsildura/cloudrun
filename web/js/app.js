@@ -221,25 +221,25 @@
 
     function updateAuthBadge(status) {
         const badge = authBadge;
-        const dot = badge.querySelector('.auth-dot');
-        const text = badge.querySelector('.auth-text');
+        const tooltip = badge.querySelector('.auth-tooltip');
 
-        badge.classList.remove('connected', 'restricted');
+        badge.classList.remove('connected', 'degraded');
 
         if (status.authenticated && status.active_subscription) {
-            badge.classList.add('connected');
-            text.textContent = `Connected · ${status.storefront || 'Unknown'}`;
-            // Only flag as restricted if explicit content is actually blocked
             const r = status.account_restrictions;
             const explicitBlocked = r && r.explicit && r.explicit.allowed === false;
             if (explicitBlocked) {
-                badge.classList.add('restricted');
-                text.textContent += ' (restricted)';
+                badge.classList.add('degraded');
+                tooltip.textContent = `Connected \u00b7 ${status.storefront || 'Unknown'} (restricted)`;
+            } else {
+                badge.classList.add('connected');
+                tooltip.textContent = `Connected \u00b7 ${status.storefront || 'Unknown'}`;
             }
         } else if (status.authenticated) {
-            text.textContent = 'No active subscription';
+            badge.classList.add('degraded');
+            tooltip.textContent = 'No active subscription';
         } else {
-            text.textContent = 'Not connected';
+            tooltip.textContent = 'Not connected';
         }
 
         // Show/hide sign out button based on token presence
