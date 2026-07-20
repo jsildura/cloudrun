@@ -105,13 +105,17 @@ a:hover {
 
 /* ── Header Icons ──────────────────────────────────────────────────────────── */
 .header-icons {
-    position: absolute;
-    top: 40px;
-    left: 0;
-    right: 0;
+    position: relative;
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+}
+
+.header-actions {
+    display: flex;
     gap: 6px;
+    align-items: center;
 }
 
 .header-logo {
@@ -165,9 +169,7 @@ a:hover {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    position: absolute;
-    top: 46px;
-    left: 0;
+    position: relative;
     cursor: default;
     padding: 4px;
     margin: 0;
@@ -260,7 +262,6 @@ a:hover {
     font-size: 2.5rem;
     font-weight: 700;
     letter-spacing: -0.02em;
-    margin-top: 30px;
     margin-bottom: 12px;
     text-align: center;
     /* Create a repeating gradient that can slide smoothly */
