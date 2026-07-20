@@ -1050,11 +1050,20 @@
                 return lastSlash >= 0 ? relPath.substring(lastSlash + 1) : relPath;
             }
 
-            // Add audio entries with relative path from backend templates
-            for (const [trackIdx, entry] of Object.entries(jobBlobs)) {
-                const track = job.tracks?.[parseInt(trackIdx)];
+            // ── Sequential track-by-track ZIP packaging with visible progress ──
+            const trackIndices = Object.keys(jobBlobs).map(Number).sort((a, b) => a - b);
+            const lyricsMap = _lyricsBlobs[job.job_id] || {};
+
+            for (let t = 0; t < trackIndices.length; t++) {
+                const trackIdx = trackIndices[t];
+                const entry = jobBlobs[trackIdx];
+                const track = job.tracks?.[trackIdx];
+
+                // Update status before processing this track
+                updateFetchStatus(`Processing ${t + 1}/${totalTracks} tracks\u2026`, Math.round(((t + 1) / totalTracks) * 100));
+
+                // Add audio file
                 let zipPath = track?.relative_path || entry.filename;
-                // Insert disc subfolder if enabled (e.g., "Artist/Album/CD 1/01 Track.m4a")
                 if (useDiscFolders && track) {
                     const discNum = track.disc_number || 1;
                     const folder = _folderOf(zipPath);
@@ -1062,20 +1071,21 @@
                     zipPath = `${folder}${discLabel} ${discNum}/${fname}`;
                 }
                 zip.file(zipPath, entry.blob);
-            }
 
-            // Add lyrics in the same folder as their corresponding track
-            if (_lyricsBlobs[job.job_id]) {
-                for (const [trackIdx, entry] of Object.entries(_lyricsBlobs[job.job_id])) {
-                    const track = job.tracks?.[parseInt(trackIdx)];
+                // Add matching lyrics file for this track
+                if (lyricsMap[trackIdx]) {
+                    const lEntry = lyricsMap[trackIdx];
                     const relPath = track?.relative_path;
                     let folder = relPath ? _folderOf(relPath) : '';
                     if (useDiscFolders && track) {
                         const discNum = track.disc_number || 1;
                         folder = `${folder}${discLabel} ${discNum}/`;
                     }
-                    zip.file(folder + entry.filename, entry.blob);
+                    zip.file(folder + lEntry.filename, lEntry.blob);
                 }
+
+                // Yield to the browser so the DOM repaints the progress text
+                await new Promise(r => setTimeout(r, 0));
             }
 
             // Add covers — one copy per disc subfolder if enabled, otherwise in album folder
@@ -1870,6 +1880,11 @@
 
         // Fetch blob for each track that just completed
         if (data.tracks) {
+            // Track whether we already triggered a cover fetch for this job
+            if (!_coverBlobPromises[data.job_id]) _coverBlobPromises[data.job_id] = {};
+            const isPlaylist = data.media_type === 'playlist';
+            const albumCoverFetched = Object.keys(_coverBlobPromises[data.job_id]).length > 0;
+
             data.tracks.forEach((track, i) => {
                 const prevTrack = prevJob?.tracks?.[i];
                 if (track.stage === 'done' && track.file_path && prevTrack?.stage !== 'done') {
@@ -1878,12 +1893,35 @@
                     if (track.synced_lyrics_file_path) {
                         fetchLyricsBlob(data.job_id, i);
                     }
-                    // Also fetch cover file if available
-                    if (track.cover_file_path) {
+                    // Cover art: for albums, only fetch once (first track);
+                    // for playlists, fetch the main playlist cover once
+                    if (track.cover_file_path && !isPlaylist && !albumCoverFetched) {
                         fetchCoverBlob(data.job_id, i);
                     }
                 }
             });
+
+            // For playlists: fetch the main playlist cover art (from job.artwork_url)
+            // instead of individual track covers
+            if (isPlaylist && !albumCoverFetched && data.artwork_url) {
+                const playlistCoverPromise = (async () => {
+                    try {
+                        const resp = await fetch(data.artwork_url);
+                        if (!resp.ok) return;
+                        const blob = await resp.blob();
+                        if (!blob || blob.size === 0) return;
+                        // Determine extension from URL or default to .jpg
+                        const urlPath = new URL(data.artwork_url).pathname;
+                        const ext = urlPath.match(/\.(jpe?g|png|webp)$/i)?.[0] || '.jpg';
+                        const filename = `Cover${ext}`;
+                        if (!_coverBlobs[data.job_id]) _coverBlobs[data.job_id] = {};
+                        _coverBlobs[data.job_id][filename] = { blob, filename };
+                    } catch (err) {
+                        console.warn('[App] Playlist cover fetch failed:', err);
+                    }
+                })();
+                _coverBlobPromises[data.job_id]['playlist_cover'] = playlistCoverPromise;
+            }
         }
 
         // Prepare native download link when entire job is done
