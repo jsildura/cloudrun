@@ -54,9 +54,10 @@ class GamdlApi {
 
     // ── Downloads ─────────────────────────────────────────────────────────
 
-    async startDownload(url, config = null) {
+    async startDownload(url, config = null, selectedTracks = null) {
         const body = { url };
         if (config) body.config = config;
+        if (selectedTracks) body.selected_tracks = selectedTracks;
         return this._fetch('/api/download', {
             method: 'POST',
             body: JSON.stringify(body),

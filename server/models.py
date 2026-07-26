@@ -22,6 +22,7 @@ class AuthStatus(BaseModel):
 class DownloadRequest(BaseModel):
     url: str = Field(..., description="Apple Music URL to download")
     config: "ConfigUpdate | None" = Field(None, description="Optional per-user config overrides")
+    selected_tracks: list[int] | None = Field(None, description="0-based track indices to download (None = all)")
 
 
 class DownloadStage(str, Enum):
@@ -64,6 +65,7 @@ class DownloadJob(BaseModel):
     error_message: str | None = None
     animated_artwork_paths: list[str] = []
     animated_artwork_urls: list[str] = []
+    selected_tracks: list[int] | None = None
 
 
 # ── Preview ──────────────────────────────────────────────────────────────────

@@ -40,6 +40,7 @@
     const previewGenre = $('#preview-genre');
     const previewExplicit = $('#preview-explicit');
     const previewTracks = $('#preview-tracks');
+    const previewToolbar = $('#preview-toolbar');
     const previewFooter = $('#preview-footer');
     const previewDownloadBtn = $('#preview-download-btn');
 
@@ -74,6 +75,11 @@
     const _coverBlobPromises = {};   // jobId → { filename: Promise }
     const _savedJobs = new Set(); // Jobs that already triggered auto-save
     const _activeJobs = new Set(); // Jobs started in THIS browser session (not replayed)
+
+    // ── Track Selection State ─────────────────────────────────────────────
+    let _isEditMode = false;           // Whether checkboxes are visible
+    let _finalizedSelection = null;    // Array of 0-based indices, or null (= all)
+    let _previewTrackCount = 0;        // Total track count from current preview
 
     // ── Audio Preview Manager ────────────────────────────────────────────
     let _previewAudio = null;       // Current HTMLAudioElement
@@ -839,16 +845,16 @@
      */
     function getCodecLabel(codec) {
         const map = {
-            'aac-legacy':      'AAC 256kbps',
-            'aac-he-legacy':   'AAC-HE 64kbps',
-            'aac':             'AAC 256kbps 48kHz',
-            'aac-he':          'AAC-HE 64kbps 48kHz',
-            'aac-binaural':    'AAC Binaural',
-            'aac-downmix':     'AAC Downmix',
-            'atmos':           'Dolby Atmos',
-            'ac3':             'AC3 640kbps',
-            'alac':            'ALAC Lossless',
-            'ask':             'Ask',
+            'aac-legacy': 'AAC 256kbps',
+            'aac-he-legacy': 'AAC-HE 64kbps',
+            'aac': 'AAC 256kbps 48kHz',
+            'aac-he': 'AAC-HE 64kbps 48kHz',
+            'aac-binaural': 'AAC Binaural',
+            'aac-downmix': 'AAC Downmix',
+            'atmos': 'Dolby Atmos',
+            'ac3': 'AC3 640kbps',
+            'alac': 'ALAC Lossless',
+            'ask': 'Ask',
         };
         return map[codec] || codec || 'Unknown';
     }
@@ -1185,8 +1191,8 @@
             const mediaType = _previewMediaType || (job.tracks?.length === 1 ? 'song' : 'album');
             const typeLabel = mediaType === 'song' ? 'Track'
                 : mediaType === 'playlist' ? 'Playlist'
-                : mediaType === 'music-video' ? 'Music Video'
-                : 'Album';
+                    : mediaType === 'music-video' ? 'Music Video'
+                        : 'Album';
             const userCfg = loadLocalSettings();
             const historyItem = {
                 title: previewTitle?.textContent?.trim() || job.tracks?.[0]?.title || 'Unknown',
@@ -1194,7 +1200,7 @@
                 type: typeLabel,
                 codec: getCodecLabel(userCfg.song_codec),
                 date: new Date().toLocaleDateString() + ' ' +
-                      new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             };
             addDownloadHistory(historyItem).catch(err =>
                 console.warn('[App] History save failed:', err)
@@ -1393,8 +1399,9 @@
             };
         }
 
-        // Build track list
-        const tracksHtml = data.tracks.map(t => {
+        // Build track list (with hidden checkboxes for selection)
+        _previewTrackCount = data.tracks.length;
+        const tracksHtml = data.tracks.map((t, idx) => {
             const hasPreview = !!t.preview_url;
             const playBtnHtml = hasPreview
                 ? `<button class="preview-play-btn" data-preview-url="${escapeHtml(t.preview_url)}" title="Play 30s preview" aria-label="Play preview">
@@ -1404,7 +1411,13 @@
                    </button>`
                 : '';
             return `
-            <div class="preview-track-item${hasPreview ? ' has-preview' : ''}">
+            <div class="preview-track-item${hasPreview ? ' has-preview' : ''}" data-track-idx="${idx}">
+                <button class="preview-track-checkbox" data-track-idx="${idx}" data-checked="true" aria-label="Select track" aria-pressed="true">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                        <polyline class="check-mark" points="8 12 11 15 16 9"></polyline>
+                    </svg>
+                </button>
                 <div class="preview-track-num-wrap">
                     <span class="preview-track-num">${t.track_number}</span>
                     ${playBtnHtml}
@@ -1432,6 +1445,20 @@
         if (data.copyright) footerParts.push(data.copyright);
         previewFooter.innerHTML = footerParts.map(p => `<div>${escapeHtml(p)}</div>`).join('');
 
+        // Reset track selection state
+        _isEditMode = false;
+        _finalizedSelection = null;
+        previewTracks.classList.remove('edit-mode');
+
+        // Show toolbar with "Select Tracks" button (only for multi-track content)
+        if (data.tracks.length > 1) {
+            _renderToolbarDefault();
+            previewToolbar.classList.add('visible');
+        } else {
+            previewToolbar.innerHTML = '';
+            previewToolbar.classList.remove('visible');
+        }
+
         // Show section
         previewSection.classList.add('visible');
         previewDownloadBtn.disabled = false;
@@ -1442,6 +1469,196 @@
         if (btnPaste) btnPaste.disabled = true;
     }
 
+    // ── Track Selection Logic ─────────────────────────────────────────────
+
+    function _setCheckbox(btn, checked) {
+        btn.dataset.checked = checked ? 'true' : 'false';
+        btn.setAttribute('aria-pressed', checked ? 'true' : 'false');
+        const mark = btn.querySelector('.check-mark');
+        if (mark) mark.style.display = checked ? '' : 'none';
+    }
+
+    function _renderToolbarDefault() {
+        previewToolbar.innerHTML = `
+            <button class="toolbar-icon-btn" id="btn-select-tracks" title="Select Tracks">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                </svg>
+            </button>
+        `;
+        $('#btn-select-tracks').addEventListener('click', _enterEditMode);
+    }
+
+    function _renderToolbarEditMode() {
+        const checked = previewTracks.querySelectorAll('.preview-track-checkbox[data-checked="true"]').length;
+        previewToolbar.innerHTML = `
+            <button class="toolbar-icon-btn" id="btn-select-all" title="Select All">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="1 12 5 16 13 4"/><polyline points="9 16 13 20 23 6"/>
+                </svg>
+            </button>
+            <button class="toolbar-icon-btn" id="btn-deselect-all" title="Deselect All">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                </svg>
+            </button>
+            <span class="toolbar-spacer"></span>
+            <span class="toolbar-count">${checked} / ${_previewTrackCount} selected</span>
+            <button class="toolbar-icon-btn" id="btn-cancel-select" title="Cancel">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+                </svg>
+            </button>
+            <button class="toolbar-icon-btn toolbar-icon-confirm" id="btn-confirm-select" title="Confirm Selection">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+            </button>
+        `;
+        $('#btn-select-all').addEventListener('click', () => {
+            previewTracks.querySelectorAll('.preview-track-checkbox').forEach(cb => _setCheckbox(cb, true));
+            _updateEditCount();
+        });
+        $('#btn-deselect-all').addEventListener('click', () => {
+            previewTracks.querySelectorAll('.preview-track-checkbox').forEach(cb => _setCheckbox(cb, false));
+            _updateEditCount();
+        });
+        $('#btn-cancel-select').addEventListener('click', _exitEditMode);
+        $('#btn-confirm-select').addEventListener('click', _confirmSelection);
+    }
+
+    function _renderToolbarConfirmed() {
+        const count = _finalizedSelection ? _finalizedSelection.length : _previewTrackCount;
+        previewToolbar.innerHTML = `
+            <span class="toolbar-count">${count} / ${_previewTrackCount} tracks selected</span>
+            <span class="toolbar-spacer"></span>
+            <button class="toolbar-icon-btn" id="btn-edit-selection" title="Edit Selection">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                </svg>
+            </button>
+            <button class="toolbar-icon-btn" id="btn-clear-selection" title="Clear Selection">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        `;
+        $('#btn-edit-selection').addEventListener('click', _enterEditMode);
+        $('#btn-clear-selection').addEventListener('click', _clearSelection);
+    }
+
+    function _updateEditCount() {
+        const countEl = previewToolbar.querySelector('.toolbar-count');
+        if (countEl) {
+            const checked = previewTracks.querySelectorAll('.preview-track-checkbox[data-checked="true"]').length;
+            countEl.textContent = `${checked} / ${_previewTrackCount} selected`;
+        }
+    }
+
+    function _enterEditMode() {
+        _isEditMode = true;
+        previewTracks.classList.add('edit-mode');
+
+        // If we had a finalized selection, restore checkbox states; otherwise check all
+        const checkboxes = previewTracks.querySelectorAll('.preview-track-checkbox');
+        checkboxes.forEach(cb => {
+            const idx = parseInt(cb.dataset.trackIdx, 10);
+            if (_finalizedSelection !== null) {
+                _setCheckbox(cb, _finalizedSelection.includes(idx));
+            } else {
+                _setCheckbox(cb, true);
+            }
+        });
+
+        // Remove dimmed state while editing
+        previewTracks.querySelectorAll('.preview-track-item').forEach(el => {
+            el.classList.remove('track-dimmed');
+        });
+
+        // Listen for click toggles to update the count
+        checkboxes.forEach(cb => {
+            cb.addEventListener('click', () => {
+                _setCheckbox(cb, cb.dataset.checked !== 'true');
+                _updateEditCount();
+            });
+        });
+
+        _renderToolbarEditMode();
+    }
+
+    function _exitEditMode() {
+        _isEditMode = false;
+        previewTracks.classList.remove('edit-mode');
+
+        // Re-apply dimmed state if we had a confirmed selection
+        if (_finalizedSelection !== null) {
+            previewTracks.querySelectorAll('.preview-track-item').forEach(el => {
+                const idx = parseInt(el.dataset.trackIdx, 10);
+                el.classList.toggle('track-dimmed', !_finalizedSelection.includes(idx));
+            });
+            _renderToolbarConfirmed();
+        } else {
+            _renderToolbarDefault();
+        }
+    }
+
+    function _confirmSelection() {
+        const checked = Array.from(
+            previewTracks.querySelectorAll('.preview-track-checkbox[data-checked="true"]')
+        ).map(cb => parseInt(cb.dataset.trackIdx, 10));
+
+        if (checked.length === 0) {
+            toast('Select at least one track', 'error');
+            return;
+        }
+
+        // If all tracks are selected, treat as "download all" (null)
+        if (checked.length === _previewTrackCount) {
+            _finalizedSelection = null;
+        } else {
+            _finalizedSelection = checked;
+        }
+
+        _isEditMode = false;
+        previewTracks.classList.remove('edit-mode');
+
+        // Dim unselected tracks
+        previewTracks.querySelectorAll('.preview-track-item').forEach(el => {
+            const idx = parseInt(el.dataset.trackIdx, 10);
+            if (_finalizedSelection !== null) {
+                el.classList.toggle('track-dimmed', !_finalizedSelection.includes(idx));
+            } else {
+                el.classList.remove('track-dimmed');
+            }
+        });
+
+        // Update download button text
+        if (_finalizedSelection !== null) {
+            previewDownloadBtn.title = `Download Selected (${_finalizedSelection.length})`;
+        } else {
+            previewDownloadBtn.title = 'Download';
+        }
+
+        _renderToolbarConfirmed();
+        toast(`${checked.length} track${checked.length !== 1 ? 's' : ''} selected`, 'info');
+    }
+
+    function _clearSelection() {
+        _finalizedSelection = null;
+        _isEditMode = false;
+        previewTracks.classList.remove('edit-mode');
+
+        // Remove all dimmed states
+        previewTracks.querySelectorAll('.preview-track-item').forEach(el => {
+            el.classList.remove('track-dimmed');
+        });
+
+        // Reset download button
+        previewDownloadBtn.title = 'Download';
+
+        _renderToolbarDefault();
+    }
+
     function hidePreview() {
         stopPreviewAudio();
         previewSection.classList.remove('visible');
@@ -1450,6 +1667,15 @@
         _activeJobId = null;
         previewCard.style.removeProperty('--preview-bg');
         clearStatus();
+
+        // Reset track selection state
+        _isEditMode = false;
+        _finalizedSelection = null;
+        _previewTrackCount = 0;
+        previewTracks.classList.remove('edit-mode');
+        previewToolbar.innerHTML = '';
+        previewToolbar.classList.remove('visible');
+        previewDownloadBtn.title = 'Download';
 
         // Clean up animated artwork HLS player
         if (previewCard._hlsInstance) {
@@ -1650,7 +1876,7 @@
 
         try {
             const userCfg = loadLocalSettings();
-            const job = await api.startDownload(_previewUrl, userCfg);
+            const job = await api.startDownload(_previewUrl, userCfg, _finalizedSelection);
             _activeJobs.add(job.job_id);
             _activeJobId = job.job_id;
             jobs[job.job_id] = job;

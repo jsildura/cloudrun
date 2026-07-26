@@ -725,15 +725,15 @@ a:hover {
 .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     display: none;
     align-items: center;
     justify-content: center;
     padding: 20px;
     z-index: 1000;
-    animation: fadeIn 0.2s ease;
+    animation: fadeIn 0.4s ease;
 }
 
 .modal-overlay.active {
@@ -1759,6 +1759,133 @@ a:hover {
 
 .format-badge-icon.lossless-icon {
     height: 10px;
+}
+
+/* ── Track Selection Toolbar ────────────────────────────────────── */
+.preview-toolbar {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 15px;
+    border-top: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.preview-toolbar.visible {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.preview-toolbar .toolbar-btn {
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+
+.preview-toolbar .toolbar-btn:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.preview-toolbar .toolbar-btn.btn-confirm {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+.preview-toolbar .toolbar-btn.btn-confirm:hover {
+    filter: brightness(1.15);
+}
+
+.preview-toolbar .toolbar-btn.btn-cancel-select {
+    color: var(--text-muted);
+}
+
+.preview-toolbar .toolbar-spacer {
+    flex: 1;
+}
+
+.preview-toolbar .toolbar-count {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.preview-toolbar .toolbar-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.preview-toolbar .toolbar-icon-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.preview-toolbar .toolbar-icon-confirm {
+    color: var(--accent);
+}
+
+.preview-toolbar .toolbar-icon-confirm:hover {
+    background: rgba(255, 59, 48, 0.15);
+    color: var(--accent);
+}
+
+/* ── Track Checkboxes (SVG button) ──────────────────────────────── */
+.preview-track-checkbox {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: color var(--transition-fast);
+    border-radius: 6px;
+}
+
+.preview-tracks.edit-mode .preview-track-checkbox {
+    display: flex;
+}
+
+.preview-track-checkbox[data-checked="true"] {
+    color: var(--accent);
+}
+
+.preview-track-checkbox:hover {
+    color: var(--text);
+}
+
+/* ── Dimmed (deselected after confirm) ──────────────────────────── */
+.preview-track-item.track-dimmed {
+    opacity: 0.35;
+    pointer-events: none;
+}
+
+.preview-track-item.track-dimmed .preview-track-title-text {
+    text-decoration: line-through;
+    text-decoration-color: var(--text-muted);
 }
 
 /* Track list */

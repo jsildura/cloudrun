@@ -238,7 +238,7 @@ async def start_download(req: DownloadRequest, request: Request) -> DownloadJob:
         raise HTTPException(status_code=403, detail="No active Apple Music subscription.")
 
     try:
-        job = await dm.submit_download(req.url, cfg)
+        job = await dm.submit_download(req.url, cfg, selected_tracks=req.selected_tracks)
         return job
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

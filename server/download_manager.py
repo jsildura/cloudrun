@@ -506,7 +506,7 @@ class DownloadManager:
         except Exception:
             return True  # If we can't check, allow the download
 
-    async def submit_download(self, url: str, config: ServerConfig) -> DownloadJob:
+    async def submit_download(self, url: str, config: ServerConfig, selected_tracks: list[int] | None = None) -> DownloadJob:
         """Submit a new download job. Returns the job immediately."""
         # Evict old completed jobs to free memory
         self._evict_stale_jobs()
@@ -523,6 +523,7 @@ class DownloadManager:
             job_id=job_id,
             url=url,
             stage=DownloadStage.QUEUED,
+            selected_tracks=selected_tracks,
         )
         self.jobs[job_id] = job
         self._job_configs[job_id] = config
@@ -637,6 +638,20 @@ class DownloadManager:
                     job.error_message = 'All tracks were music videos and excluded by settings'
                     await self._broadcast_job(job)
                     return
+
+            # Filter to user-selected tracks (0-based indices from the preview)
+            if job.selected_tracks is not None:
+                valid_indices = [i for i in job.selected_tracks if 0 <= i < len(download_queue)]
+                if not valid_indices:
+                    job.stage = DownloadStage.ERROR
+                    job.error_message = 'No valid tracks selected for download'
+                    await self._broadcast_job(job)
+                    return
+                download_queue = [download_queue[i] for i in sorted(valid_indices)]
+                logger.info(
+                    "Track selection: downloading %d/%d tracks (indices: %s)",
+                    len(download_queue), job.total_tracks or len(download_queue), valid_indices,
+                )
 
             # 3. Populate track info
             # Cache the download queue for retries
