@@ -2,6 +2,9 @@ export async function onRequest(context) {
     const { request, env, next } = context;
     const url = new URL(request.url);
 
+    // Temporarily disabled Protected Access
+    return next();
+
     // 1. If no password is configured, allow all traffic
     if (!env.SITE_PASSWORD) {
         return next();
