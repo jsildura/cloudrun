@@ -39,16 +39,6 @@
             </a>
 
             <div class="header-actions">
-                <a href="https://ko-fi.com/amdlxd" target="_blank" rel="noopener" class="btn-support" title="Support the Server">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M18 8h1a4 4 0 0 1 0 8h-1"></path>
-                        <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path>
-                        <line x1="6" y1="1" x2="6" y2="4"></line>
-                        <line x1="10" y1="1" x2="10" y2="4"></line>
-                        <line x1="14" y1="1" x2="14" y2="4"></line>
-                    </svg>
-                    <span>Support</span>
-                </a>
                 <button class="icon-btn" id="btn-info" title="Info" aria-label="Info">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
@@ -492,6 +482,27 @@
         });
     </script>
     -->
+    <style>
+      .floatingchat-container-wrap {
+          bottom: 34px !important;
+      }
+      @media (max-width: 768px) {
+          .floatingchat-container-wrap {
+              bottom: 34px !important;
+              transform: scale(0.85);
+              transform-origin: bottom left;
+          }
+      }
+    </style>
+    <script src='https://storage.ko-fi.com/cdn/scripts/overlay-widget.js'></script>
+    <script>
+      kofiWidgetOverlay.draw('amdlxd', {
+        'type': 'floating-chat',
+        'floating-chat.donateButton.text': 'Support Us',
+        'floating-chat.donateButton.background-color': '#ffffff',
+        'floating-chat.donateButton.text-color': '#323842'
+      });
+    </script>
 </body>
 
 </html>
