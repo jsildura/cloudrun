@@ -571,7 +571,27 @@ class DownloadManager:
 
             position_task = asyncio.create_task(_update_position())
 
-        await _download_semaphore.acquire()
+        try:
+            await _download_semaphore.acquire()
+        except asyncio.CancelledError:
+            # Cancelled while waiting for a slot — clean up waiting list
+            if (job_id, job) in _waiting_jobs:
+                _waiting_jobs.remove((job_id, job))
+            try:
+                position_task.cancel()
+            except UnboundLocalError:
+                pass
+            job.stage = DownloadStage.CANCELLED
+            logger.info("Job %s cancelled while waiting for semaphore slot", job_id)
+            await self._broadcast_job(job)
+            self._cleanup_job(job_id)
+            return
+
+        logger.info(
+            "Job %s acquired semaphore slot (available: %s)",
+            job_id, _download_semaphore._value,
+        )
+
         # Remove from waiting list and cancel position updater
         if (job_id, job) in _waiting_jobs:
             _waiting_jobs.remove((job_id, job))
@@ -581,9 +601,27 @@ class DownloadManager:
             pass  # Was never queued (semaphore was free)
         try:
             job.error_message = None  # Clear queue message
-            await self._process_job_inner(job_id, url, config)
+            # 10-minute timeout prevents hung API calls from holding
+            # the semaphore slot indefinitely (e.g. WARP proxy stall)
+            await asyncio.wait_for(
+                self._process_job_inner(job_id, url, config),
+                timeout=600,  # 10 minutes
+            )
+        except asyncio.TimeoutError:
+            job.stage = DownloadStage.ERROR
+            job.error_message = (
+                "Download timed out after 10 minutes. "
+                "The server may be experiencing network issues. Please try again."
+            )
+            logger.error("Job %s timed out after 600s", job_id)
+            await self._broadcast_job(job)
+            self._cleanup_job(job_id)
         finally:
             _download_semaphore.release()
+            logger.info(
+                "Job %s released semaphore slot (available: %s)",
+                job_id, _download_semaphore._value,
+            )
             # Record finish time for stale eviction
             self._job_finish_times[job_id] = time.time()
             # Only clean up immediately if files were actually uploaded to R2
@@ -602,9 +640,11 @@ class DownloadManager:
             # 1. Parse URL
             job.stage = DownloadStage.PARSING
             await self._broadcast_job(job)
+            logger.info("Job %s: PARSING — building downloader", job_id)
 
             downloader = self._build_downloader(config, job_id=job_id)
             url_info = downloader.get_url_info(url)
+            logger.info("Job %s: URL parsed — type=%s", job_id, url_info)
 
             if not url_info:
                 job.stage = DownloadStage.ERROR
@@ -615,8 +655,10 @@ class DownloadManager:
             # 2. Build download queue
             job.stage = DownloadStage.PREPARING
             await self._broadcast_job(job)
+            logger.info("Job %s: PREPARING — fetching download queue from API", job_id)
 
             download_queue = await downloader.get_download_queue(url_info)
+            logger.info("Job %s: download queue returned %d items", job_id, len(download_queue) if download_queue else 0)
             if not download_queue:
                 job.stage = DownloadStage.ERROR
                 job.error_message = f'No downloadable media found for "{url}"'
