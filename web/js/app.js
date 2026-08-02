@@ -2263,6 +2263,21 @@
 
         // Focus input
         urlInput.focus();
+
+        // ── Keyboard Shortcuts ──
+        document.addEventListener('keydown', (e) => {
+            // If Enter pressed, outside of an input/textarea
+            if (e.key === 'Enter') {
+                const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+                if (activeTag !== 'input' && activeTag !== 'textarea') {
+                    // Check if preview is visible and button is not disabled
+                    if (previewSection.classList.contains('active') && !previewDownloadBtn.disabled) {
+                        e.preventDefault();
+                        previewDownloadBtn.click();
+                    }
+                }
+            }
+        });
     }
 
     // Start when DOM ready
