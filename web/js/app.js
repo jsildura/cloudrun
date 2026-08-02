@@ -1885,8 +1885,8 @@
         const filename = `artwork.${ext}`;
 
         if (type === 'video/mp4' && url.endsWith('.m3u8')) {
-            // For animated artwork, we need the backend to convert it to mp4
-            window.location.href = `/api/convert-m3u8?url=${encodeURIComponent(url)}`;
+            // For animated artwork, we need the backend to convert it to mp4 (defaulting to 720p to save space)
+            window.location.href = `/api/convert-m3u8?url=${encodeURIComponent(url)}&quality=720`;
             toast('Converting and downloading artwork...', 'success');
             return;
         }

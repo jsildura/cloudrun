@@ -225,8 +225,8 @@ async def preview_url(req: DownloadRequest, request: Request) -> PreviewResponse
 
 
 @router.get("/convert-m3u8")
-async def convert_m3u8(url: str, request: Request, background_tasks: BackgroundTasks):
-    """Convert an m3u8 stream to an mp4 file using ffmpeg."""
+async def convert_m3u8(url: str, request: Request, background_tasks: BackgroundTasks, quality: int = 720):
+    """Convert an m3u8 stream to an mp4 file using yt-dlp to select resolution."""
     import asyncio
     _check_rate_limit(request)
     
@@ -236,9 +236,11 @@ async def convert_m3u8(url: str, request: Request, background_tasks: BackgroundT
     temp_file = f"/tmp/artwork_{uuid.uuid4().hex}.mp4"
     
     cmd = [
-        "ffmpeg", "-y", "-i", url,
-        "-c", "copy", "-bsf:a", "aac_adtstoasc",
-        temp_file
+        "yt-dlp",
+        "-f", f"bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best",
+        "--merge-output-format", "mp4",
+        "-o", temp_file,
+        url
     ]
     
     process = await asyncio.create_subprocess_exec(
@@ -250,7 +252,7 @@ async def convert_m3u8(url: str, request: Request, background_tasks: BackgroundT
     stdout, stderr = await process.communicate()
     
     if process.returncode != 0:
-        logger.error(f"FFmpeg failed to convert artwork: {stderr.decode()}")
+        logger.error(f"yt-dlp failed to convert artwork: {stderr.decode()}")
         if os.path.exists(temp_file):
             os.remove(temp_file)
         raise HTTPException(status_code=500, detail="Failed to convert animated artwork to MP4")
