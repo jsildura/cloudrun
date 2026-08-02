@@ -1717,9 +1717,37 @@ a:hover {
     box-shadow: var(--shadow-md);
 }
 
+.preview-save-artwork-btn::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: -32px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(30, 30, 30, 0.9);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    z-index: 20;
+}
+
 .preview-artwork-wrapper:hover .preview-save-artwork-btn {
     opacity: 1;
     pointer-events: auto;
+}
+
+.preview-save-artwork-btn:hover::after {
+    opacity: 1;
+    bottom: -36px;
 }
 
 .preview-save-artwork-btn:hover {

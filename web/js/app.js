@@ -43,6 +43,7 @@
     const previewToolbar = $('#preview-toolbar');
     const previewFooter = $('#preview-footer');
     const previewDownloadBtn = $('#preview-download-btn');
+    const previewSaveArtworkBtn = $('#preview-save-artwork-btn');
 
     // Settings modal
     const modalSettings = $('#modal-settings');
@@ -1344,6 +1345,10 @@
 
         // Set artwork: prefer animated (video) over static (image)
         if (data.animated_artwork_url && typeof Hls !== 'undefined') {
+            previewSaveArtworkBtn.dataset.tooltip = "Save Animated Artwork";
+            previewSaveArtworkBtn.dataset.url = data.animated_artwork_url;
+            previewSaveArtworkBtn.dataset.type = "video/mp4";
+            
             // Animated artwork — show looping silent video
             previewArtwork.style.display = 'none';
 
@@ -1386,6 +1391,10 @@
             };
             posterImg.src = data.artwork_url;
         } else {
+            previewSaveArtworkBtn.dataset.tooltip = "Save Artwork";
+            previewSaveArtworkBtn.dataset.url = data.artwork_url;
+            previewSaveArtworkBtn.dataset.type = "image/jpeg";
+            
             // Static artwork — standard image
             // Remove any existing video
             const existingVideo = previewArtwork.parentElement.querySelector('.preview-artwork-video');
@@ -1861,6 +1870,37 @@
                 if (btnPaste) btnPaste.disabled = false;
             }
             btnSubmit.textContent = 'Preview';
+        }
+    });
+
+    // Save artwork button handler
+    previewSaveArtworkBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const url = previewSaveArtworkBtn.dataset.url;
+        if (!url) return;
+        
+        const ext = previewSaveArtworkBtn.dataset.type === 'video/mp4' ? 'mp4' : 'jpg';
+        const filename = `artwork.${ext}`;
+
+        try {
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error('Network response was not ok');
+            const blob = await resp.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+            toast('Artwork saved', 'success');
+        } catch (err) {
+            console.error('Failed to download artwork:', err);
+            window.open(url, '_blank'); // fallback
         }
     });
 
