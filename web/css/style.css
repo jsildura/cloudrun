@@ -1573,6 +1573,7 @@ a:hover {
 
 .preview-artwork-wrapper {
     flex-shrink: 0;
+    position: relative;
 }
 
 .preview-artwork {
@@ -1689,6 +1690,44 @@ a:hover {
     background: rgba(255, 43, 92, 0.12);
     border: 1px solid rgba(255, 43, 92, 0.25);
     border-radius: 999px;
+}
+
+.preview-save-artwork-btn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    color: #fff;
+    cursor: pointer;
+    z-index: 15;
+    opacity: 0;
+    pointer-events: none;
+    transition: all var(--transition-fast);
+    box-shadow: var(--shadow-md);
+}
+
+.preview-artwork-wrapper:hover .preview-save-artwork-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.preview-save-artwork-btn:hover {
+    background: rgba(0, 0, 0, 0.85);
+    transform: translate(-50%, -50%) scale(1.1);
+}
+
+.preview-save-artwork-btn:active {
+    transform: translate(-50%, -50%) scale(0.95);
 }
 
 .preview-download-btn {
