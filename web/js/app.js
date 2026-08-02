@@ -1347,7 +1347,7 @@
         if (data.animated_artwork_url && typeof Hls !== 'undefined') {
             previewSaveArtworkBtn.title = "Save Animated Artwork";
             previewSaveArtworkBtn.dataset.url = data.animated_artwork_url;
-            previewSaveArtworkBtn.dataset.type = "video/mp4";
+            previewSaveArtworkBtn.dataset.type = "application/x-mpegURL";
             
             // Animated artwork — show looping silent video
             previewArtwork.style.display = 'none';
@@ -1880,7 +1880,8 @@
         const url = previewSaveArtworkBtn.dataset.url;
         if (!url) return;
         
-        const ext = previewSaveArtworkBtn.dataset.type === 'video/mp4' ? 'mp4' : 'jpg';
+        const type = previewSaveArtworkBtn.dataset.type;
+        const ext = type === 'application/x-mpegURL' ? 'm3u8' : 'jpg';
         const filename = `artwork.${ext}`;
 
         try {
