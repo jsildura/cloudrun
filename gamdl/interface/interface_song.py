@@ -269,7 +269,17 @@ class AppleMusicSongInterface(AppleMusicInterface):
         if session_key_metadata:
             asset_metadata = self._get_asset_metadata(m3u8_master_data)
             variant_id = playlist["stream_info"]["stable_variant_id"]
-            drm_ids = asset_metadata[variant_id]["AUDIO-SESSION-KEY-IDS"]
+            try:
+                drm_ids = asset_metadata[variant_id]["AUDIO-SESSION-KEY-IDS"]
+            except KeyError:
+                codec_name = playlist["stream_info"].get("audio", codec.value)
+                raise Exception(
+                    f"This track is not available in the selected codec "
+                    f"({codec_name}). DRM metadata is missing for this "
+                    f"format. Try downloading with a stable codec "
+                    f"(AAC 256kbps) instead, or enable Codec Fallback "
+                    f"in Settings."
+                )
 
             stream_info.widevine_pssh = self._get_drm_uri_from_session_key(
                 session_key_metadata,
