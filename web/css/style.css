@@ -1703,10 +1703,10 @@ a:hover {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.65);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 50%;
     color: #fff;
     cursor: pointer;
@@ -1751,7 +1751,7 @@ a:hover {
 }
 
 .preview-save-artwork-btn:hover {
-    background: rgba(0, 0, 0, 0.85);
+    background: rgba(0, 0, 0, 0.55);
     transform: scale(1.1);
 }
 
