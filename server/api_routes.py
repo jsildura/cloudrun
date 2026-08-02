@@ -13,9 +13,11 @@ from collections import defaultdict
 import psutil
 psutil.cpu_percent()  # warm-up: first call always returns 0, prime for next calls
 from dataclasses import asdict
+import os
+import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from .config import ServerConfig, load_config, save_config
@@ -220,6 +222,54 @@ async def preview_url(req: DownloadRequest, request: Request) -> PreviewResponse
                 await asyncio.sleep(1)
 
     raise HTTPException(status_code=500, detail=f"Preview failed: {last_error}")
+
+
+@router.get("/convert-m3u8")
+async def convert_m3u8(url: str, request: Request, background_tasks: BackgroundTasks):
+    """Convert an m3u8 stream to an mp4 file using ffmpeg."""
+    import asyncio
+    _check_rate_limit(request)
+    
+    if not url.endswith('.m3u8'):
+        raise HTTPException(status_code=400, detail="URL must be an m3u8 playlist")
+        
+    temp_file = f"/tmp/artwork_{uuid.uuid4().hex}.mp4"
+    
+    cmd = [
+        "ffmpeg", "-y", "-i", url,
+        "-c", "copy", "-bsf:a", "aac_adtstoasc",
+        temp_file
+    ]
+    
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    
+    stdout, stderr = await process.communicate()
+    
+    if process.returncode != 0:
+        logger.error(f"FFmpeg failed to convert artwork: {stderr.decode()}")
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+        raise HTTPException(status_code=500, detail="Failed to convert animated artwork to MP4")
+        
+    def cleanup():
+        if os.path.exists(temp_file):
+            try:
+                os.remove(temp_file)
+            except Exception as e:
+                logger.error(f"Failed to remove temp file {temp_file}: {e}")
+                
+    background_tasks.add_task(cleanup)
+    
+    return FileResponse(
+        path=temp_file, 
+        filename="artwork.mp4", 
+        media_type="video/mp4"
+    )
+
 
 
 # ── Downloads ─────────────────────────────────────────────────────────────────

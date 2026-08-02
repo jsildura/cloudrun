@@ -1347,7 +1347,7 @@
         if (data.animated_artwork_url && typeof Hls !== 'undefined') {
             previewSaveArtworkBtn.title = "Save Animated Artwork";
             previewSaveArtworkBtn.dataset.url = data.animated_artwork_url;
-            previewSaveArtworkBtn.dataset.type = "application/x-mpegURL";
+            previewSaveArtworkBtn.dataset.type = "video/mp4";
             
             // Animated artwork — show looping silent video
             previewArtwork.style.display = 'none';
@@ -1881,8 +1881,15 @@
         if (!url) return;
         
         const type = previewSaveArtworkBtn.dataset.type;
-        const ext = type === 'application/x-mpegURL' ? 'm3u8' : 'jpg';
+        const ext = type === 'video/mp4' ? 'mp4' : 'jpg';
         const filename = `artwork.${ext}`;
+
+        if (type === 'video/mp4' && url.endsWith('.m3u8')) {
+            // For animated artwork, we need the backend to convert it to mp4
+            window.location.href = `/api/convert-m3u8?url=${encodeURIComponent(url)}`;
+            toast('Converting and downloading artwork...', 'success');
+            return;
+        }
 
         try {
             const resp = await fetch(url);
