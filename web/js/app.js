@@ -1767,10 +1767,7 @@
                 icon = '<span class="status-track-icon"></span>';
             }
 
-            const errorDetail = (t.stage === 'error' && t.error_message)
-                ? `<div class="status-track-error">${escapeHtml(t.error_message)}</div>`
-                : '';
-            trackLines += `<div class="${cls}">${icon}<span class="status-track-name">${escapeHtml(t.title || `Track ${t.track_index + 1}`)}</span>${errorDetail}</div>`;
+            trackLines += `<div class="${cls}">${icon}<span class="status-track-name">${escapeHtml(t.title || `Track ${t.track_index + 1}`)}</span></div>`;
         }
 
         // Build progress bar HTML
@@ -2116,6 +2113,10 @@
 
             data.tracks.forEach((track, i) => {
                 const prevTrack = prevJob?.tracks?.[i];
+                // Fire toast when a track transitions to error
+                if (track.stage === 'error' && prevTrack?.stage !== 'error' && track.error_message) {
+                    toast(`${track.title || 'Track'}: ${track.error_message}`, 'error');
+                }
                 if (track.stage === 'done' && track.file_path && prevTrack?.stage !== 'done') {
                     fetchTrackBlob(data.job_id, i);
                     // Also fetch lyrics file if available
