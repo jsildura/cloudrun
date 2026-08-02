@@ -1573,7 +1573,11 @@ a:hover {
 
 .preview-artwork-wrapper {
     flex-shrink: 0;
-    position: relative;
+    display: grid;
+}
+
+.preview-artwork-wrapper > * {
+    grid-area: 1 / 1;
 }
 
 .preview-artwork {
@@ -1693,10 +1697,7 @@ a:hover {
 }
 
 .preview-save-artwork-btn {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    place-self: center;
     width: 44px;
     height: 44px;
     display: flex;
@@ -1723,11 +1724,11 @@ a:hover {
 
 .preview-save-artwork-btn:hover {
     background: rgba(0, 0, 0, 0.85);
-    transform: translate(-50%, -50%) scale(1.1);
+    transform: scale(1.1);
 }
 
 .preview-save-artwork-btn:active {
-    transform: translate(-50%, -50%) scale(0.95);
+    transform: scale(0.95);
 }
 
 .preview-download-btn {
