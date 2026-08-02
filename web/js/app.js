@@ -1767,7 +1767,10 @@
                 icon = '<span class="status-track-icon"></span>';
             }
 
-            trackLines += `<div class="${cls}">${icon}<span class="status-track-name">${escapeHtml(t.title || `Track ${t.track_index + 1}`)}</span></div>`;
+            const errorDetail = (t.stage === 'error' && t.error_message)
+                ? `<div class="status-track-error">${escapeHtml(t.error_message)}</div>`
+                : '';
+            trackLines += `<div class="${cls}">${icon}<span class="status-track-name">${escapeHtml(t.title || `Track ${t.track_index + 1}`)}</span>${errorDetail}</div>`;
         }
 
         // Build progress bar HTML

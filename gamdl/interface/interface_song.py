@@ -6,6 +6,8 @@ import json
 import logging
 import re
 from xml.dom import minidom
+
+from gamdl.utils import GamdlError
 from xml.etree import ElementTree
 
 import m3u8
@@ -273,7 +275,7 @@ class AppleMusicSongInterface(AppleMusicInterface):
                 drm_ids = asset_metadata[variant_id]["AUDIO-SESSION-KEY-IDS"]
             except KeyError:
                 codec_name = playlist["stream_info"].get("audio", codec.value)
-                raise Exception(
+                raise GamdlError(
                     f"This track is not available in the selected codec "
                     f"({codec_name}). DRM metadata is missing for this "
                     f"format. Try downloading with a stable codec "
