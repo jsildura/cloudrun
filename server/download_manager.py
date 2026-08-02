@@ -6,6 +6,7 @@ with real-time progress tracking via SSE broadcast.
 
 import asyncio
 import logging
+import os
 import shutil
 import tempfile
 import time
@@ -57,6 +58,13 @@ _MIN_FREE_DISK_BYTES = 200 * 1024 * 1024  # 200 MB
 
 # How long to keep completed jobs in memory before eviction (safety net)
 _STALE_JOB_TTL = 300  # 5 minutes — primary cleanup is event-driven from frontend
+
+# Tracks which jobs currently hold a semaphore slot and when they acquired it
+# Key = job_id, Value = timestamp when the slot was acquired
+_active_jobs: dict[str, float] = {}
+
+# Maximum time (seconds) a job can hold a semaphore slot before being force-cancelled
+_MAX_JOB_HOLD_TIME = 600  # 10 minutes
 
 
 class DownloadManager:
@@ -534,6 +542,48 @@ class DownloadManager:
         self._job_tasks[job_id] = task
         return job
 
+    async def _probe_connectivity(self) -> bool:
+        """Send a quick test request to Apple Music API to verify the
+        WARP proxy tunnel is alive.
+
+        Returns True if the network path works, False if all retries fail.
+        The first attempt often 'wakes up' a sleeping WireGuard tunnel,
+        so we retry up to 3 times with short delays.
+        """
+        import httpx as _httpx
+
+        proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("ALL_PROXY")
+        if not proxy_url:
+            # No proxy configured — assume direct connectivity is fine
+            return True
+
+        target_url = "https://amp-api.music.apple.com"
+        max_attempts = 3
+        delay_between = 2  # seconds
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                async with _httpx.AsyncClient(
+                    proxy=proxy_url,
+                    timeout=10.0,
+                ) as client:
+                    response = await client.head(target_url)
+                    logger.info(
+                        "Connectivity probe succeeded (attempt %d/%d, HTTP %s)",
+                        attempt, max_attempts, response.status_code,
+                    )
+                    return True
+            except Exception as e:
+                logger.warning(
+                    "Connectivity probe failed (attempt %d/%d): %s",
+                    attempt, max_attempts, e,
+                )
+                if attempt < max_attempts:
+                    await asyncio.sleep(delay_between)
+
+        logger.error("Connectivity probe failed after %d attempts", max_attempts)
+        return False
+
     async def _process_job(
         self, job_id: str, url: str, config: ServerConfig
     ) -> None:
@@ -591,6 +641,7 @@ class DownloadManager:
             "Job %s acquired semaphore slot (available: %s)",
             job_id, _download_semaphore._value,
         )
+        _active_jobs[job_id] = time.time()  # Track when we acquired the slot
 
         # Remove from waiting list and cancel position updater
         if (job_id, job) in _waiting_jobs:
@@ -601,23 +652,24 @@ class DownloadManager:
             pass  # Was never queued (semaphore was free)
         try:
             job.error_message = None  # Clear queue message
-            # 10-minute timeout prevents hung API calls from holding
-            # the semaphore slot indefinitely (e.g. WARP proxy stall)
+            # 5-minute timeout — safety net for downloads that hang despite
+            # the connectivity probe passing (e.g. mid-download network drop)
             await asyncio.wait_for(
                 self._process_job_inner(job_id, url, config),
-                timeout=600,  # 10 minutes
+                timeout=300,  # 5 minutes
             )
         except asyncio.TimeoutError:
             job.stage = DownloadStage.ERROR
             job.error_message = (
-                "Download timed out after 10 minutes. "
+                "Download timed out after 5 minutes. "
                 "The server may be experiencing network issues. Please try again."
             )
-            logger.error("Job %s timed out after 600s", job_id)
+            logger.error("Job %s timed out after 300s", job_id)
             await self._broadcast_job(job)
             self._cleanup_job(job_id)
         finally:
             _download_semaphore.release()
+            _active_jobs.pop(job_id, None)  # Stop tracking this job
             logger.info(
                 "Job %s released semaphore slot (available: %s)",
                 job_id, _download_semaphore._value,
@@ -637,6 +689,17 @@ class DownloadManager:
         """Inner download logic, called within the semaphore."""
         job = self.jobs[job_id]
         try:
+            # 0. Verify network connectivity through WARP proxy
+            #    This wakes up a sleeping WireGuard tunnel or fails fast
+            if not await self._probe_connectivity():
+                job.stage = DownloadStage.ERROR
+                job.error_message = (
+                    "Cannot reach Apple Music servers. "
+                    "The network proxy may be down. Please try again in a few minutes."
+                )
+                await self._broadcast_job(job)
+                return
+
             # 1. Parse URL
             job.stage = DownloadStage.PARSING
             await self._broadcast_job(job)
@@ -1467,3 +1530,45 @@ class DownloadManager:
 
     async def _broadcast_job(self, job: DownloadJob) -> None:
         await self._broadcast({"type": "job_update", "data": job.model_dump()})
+
+def check_semaphore_health() -> None:
+    """Watchdog: force-cancel any download job that has been holding a
+    semaphore slot for longer than _MAX_JOB_HOLD_TIME.
+
+    Called every 60 seconds from the periodic cleanup loop in main.py.
+    This is a safety net — with the WARP keepalive and connectivity probe,
+    this should rarely (if ever) trigger.
+    """
+    now = time.time()
+    stuck_jobs = [
+        (job_id, acquire_time)
+        for job_id, acquire_time in _active_jobs.items()
+        if now - acquire_time > _MAX_JOB_HOLD_TIME
+    ]
+
+    for job_id, acquire_time in stuck_jobs:
+        held_for = int(now - acquire_time)
+        logger.error(
+            "Watchdog: force-cancelling zombie job %s (held semaphore for %ds)",
+            job_id, held_for,
+        )
+
+        # Find the asyncio Task for this job across all user managers
+        # and cancel it — the CancelledError will propagate through
+        # _process_job_inner's except block, which sets the job to
+        # CANCELLED state and releases the semaphore in the finally block
+        from . import api_routes
+        for dm in api_routes._user_managers.values():
+            task = dm._job_tasks.get(job_id)
+            if task and not task.done():
+                task.cancel()
+                logger.info("Watchdog: sent cancel signal to job %s task", job_id)
+                break
+        else:
+            # Task not found — force-release semaphore and clean up tracking
+            logger.warning(
+                "Watchdog: job %s task not found, force-releasing semaphore slot",
+                job_id,
+            )
+            _active_jobs.pop(job_id, None)
+            _download_semaphore.release()

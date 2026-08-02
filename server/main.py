@@ -5,6 +5,8 @@ Serves both the REST API and the static frontend.
 
 import asyncio
 import logging
+import os
+import httpx
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -27,6 +29,41 @@ logging.basicConfig(
 
 _CLEANUP_INTERVAL = 60  # seconds
 
+_WARP_KEEPALIVE_INTERVAL = 300  # 5 minutes
+
+
+async def _warp_keepalive_loop() -> None:
+    """Send a lightweight request through the WARP proxy every 5 minutes
+    to prevent the WireGuard tunnel from dropping its encryption keys.
+
+    Without this, the tunnel dies after ~9 minutes of inactivity, causing
+    all subsequent download requests to hang silently.
+    """
+    proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("ALL_PROXY")
+    if not proxy_url:
+        logger.info("WARP keepalive: no proxy configured, skipping")
+        return
+
+    # Target: Apple Music API origin — lightweight HEAD request
+    target_url = "https://amp-api.music.apple.com"
+
+    while True:
+        await asyncio.sleep(_WARP_KEEPALIVE_INTERVAL)
+        try:
+            async with httpx.AsyncClient(
+                proxy=proxy_url,
+                timeout=10.0,
+            ) as client:
+                start = asyncio.get_event_loop().time()
+                response = await client.head(target_url)
+                elapsed_ms = int((asyncio.get_event_loop().time() - start) * 1000)
+                logger.info(
+                    "WARP keepalive: tunnel alive (HTTP %s, %dms)",
+                    response.status_code, elapsed_ms,
+                )
+        except Exception as e:
+            logger.warning("WARP keepalive: tunnel unreachable (%s) — will retry in %ds", e, _WARP_KEEPALIVE_INTERVAL)
+
 
 async def _periodic_cleanup_loop() -> None:
     """Background loop: runs every 60s to evict stale jobs and free disk/RAM."""
@@ -34,6 +71,9 @@ async def _periodic_cleanup_loop() -> None:
         await asyncio.sleep(_CLEANUP_INTERVAL)
         try:
             await api_routes.run_periodic_cleanup()
+            # Check for zombie jobs holding semaphore slots
+            from .download_manager import check_semaphore_health
+            check_semaphore_health()
         except Exception:
             logger.exception("Periodic cleanup error (non-fatal)")
 
@@ -71,12 +111,21 @@ async def lifespan(app: FastAPI):
     cleanup_task = asyncio.create_task(_periodic_cleanup_loop())
     logger.info("Background cleanup loop started (every %ds)", _CLEANUP_INTERVAL)
 
+    # Start WARP tunnel keep-alive heartbeat
+    keepalive_task = asyncio.create_task(_warp_keepalive_loop())
+    logger.info("WARP keepalive loop started (every %ds)", _WARP_KEEPALIVE_INTERVAL)
+
     yield
 
     # Cancel background cleanup loop
     cleanup_task.cancel()
+    keepalive_task.cancel()
     try:
         await cleanup_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await keepalive_task
     except asyncio.CancelledError:
         pass
     logger.info("Shutting down gamdl web server...")
