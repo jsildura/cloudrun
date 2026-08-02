@@ -1345,7 +1345,7 @@
 
         // Set artwork: prefer animated (video) over static (image)
         if (data.animated_artwork_url && typeof Hls !== 'undefined') {
-            previewSaveArtworkBtn.dataset.tooltip = "Save Animated Artwork";
+            previewSaveArtworkBtn.title = "Save Animated Artwork";
             previewSaveArtworkBtn.dataset.url = data.animated_artwork_url;
             previewSaveArtworkBtn.dataset.type = "video/mp4";
             
@@ -1391,7 +1391,7 @@
             };
             posterImg.src = data.artwork_url;
         } else {
-            previewSaveArtworkBtn.dataset.tooltip = "Save Artwork";
+            previewSaveArtworkBtn.title = "Save Artwork";
             previewSaveArtworkBtn.dataset.url = data.artwork_url;
             previewSaveArtworkBtn.dataset.type = "image/jpeg";
             
