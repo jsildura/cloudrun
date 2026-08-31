@@ -384,7 +384,15 @@ async def decrypt_samples(
     host, port = wrapper_ip.split(":")
     port = int(port)
 
-    reader, writer = await asyncio.open_connection(host, port)
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port), timeout=5.0
+        )
+    except asyncio.TimeoutError:
+        raise TimeoutError(
+            f"Failed to connect to Wrapper decrypt port at {wrapper_ip} within 5.0s. "
+            "The daemon may be hung or down."
+        )
 
     try:
         decrypted_data = bytearray()
@@ -464,15 +472,21 @@ async def decrypt_samples(
                 last_progress_time = now
 
         # Send close signal
-        writer.write(bytes([0, 0, 0, 0, 0]))
-        await writer.drain()
+        try:
+            writer.write(bytes([0, 0, 0, 0, 0]))
+            await asyncio.wait_for(writer.drain(), timeout=2.0)
+        except Exception:
+            pass
 
         logger.debug(f"Decrypted {len(samples)} samples ({len(decrypted_data)} bytes)")
         return bytes(decrypted_data)
 
     finally:
-        writer.close()
-        await writer.wait_closed()
+        try:
+            writer.close()
+            await asyncio.wait_for(writer.wait_closed(), timeout=3.0)
+        except Exception as e:
+            logger.debug(f"Error during socket cleanup: {e}")
 
 
 def write_decrypted_m4a(
