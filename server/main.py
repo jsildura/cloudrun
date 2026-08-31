@@ -65,6 +65,61 @@ async def _warp_keepalive_loop() -> None:
             logger.warning("WARP keepalive: tunnel unreachable (%s) — will retry in %ds", e, _WARP_KEEPALIVE_INTERVAL)
 
 
+_WRAPPER_WATCHDOG_INTERVAL = 60  # Check wrapper health every 60 seconds
+_WRAPPER_WATCHDOG_FAILURE_THRESHOLD = 2  # 2 consecutive failed health checks trigger auto-restart
+
+
+async def _wrapper_watchdog_loop() -> None:
+    """Background watchdog: monitors Wrapper ports 10020 and 30020.
+    If the wrapper daemon crashes, hangs, or enters a dead socket state,
+    it automatically recycles the process to maintain zero-touch reliability.
+    """
+    # Wait 30 seconds after server startup before running health checks
+    await asyncio.sleep(30)
+    consecutive_failures = 0
+
+    while True:
+        await asyncio.sleep(_WRAPPER_WATCHDOG_INTERVAL)
+        try:
+            # Check if wrapper binary exists on disk before attempting watchdog checks
+            wrapper_bin = "/app/Wrapper/wrapper"
+            if not os.path.isfile(wrapper_bin):
+                continue
+
+            # Run synchronous health check in thread executor
+            is_healthy = await asyncio.get_event_loop().run_in_executor(
+                None, api_routes.check_wrapper_healthy
+            )
+
+            if is_healthy:
+                if consecutive_failures > 0:
+                    logger.info("Wrapper watchdog: Wrapper returned to healthy state")
+                consecutive_failures = 0
+            else:
+                consecutive_failures += 1
+                logger.warning(
+                    "Wrapper watchdog: Wrapper health check failed (%d/%d)",
+                    consecutive_failures,
+                    _WRAPPER_WATCHDOG_FAILURE_THRESHOLD,
+                )
+
+                if consecutive_failures >= _WRAPPER_WATCHDOG_FAILURE_THRESHOLD:
+                    logger.error(
+                        "Wrapper watchdog: Health check failed %d times in a row. "
+                        "Auto-restarting Wrapper daemon...",
+                        consecutive_failures,
+                    )
+                    restart_res = await asyncio.get_event_loop().run_in_executor(
+                        None, api_routes.do_wrapper_restart
+                    )
+                    logger.info("Wrapper watchdog restart result: %s", restart_res)
+                    consecutive_failures = 0
+                    # Give it extra time to stabilize before next check
+                    await asyncio.sleep(15)
+        except Exception:
+            logger.exception("Wrapper watchdog error (non-fatal)")
+
+
 async def _periodic_cleanup_loop() -> None:
     """Background loop: runs every 60s to evict stale jobs and free disk/RAM."""
     while True:
@@ -115,19 +170,25 @@ async def lifespan(app: FastAPI):
     keepalive_task = asyncio.create_task(_warp_keepalive_loop())
     logger.info("WARP keepalive loop started (every %ds)", _WARP_KEEPALIVE_INTERVAL)
 
+    # Start Wrapper auto-restart watchdog
+    wrapper_watchdog_task = asyncio.create_task(_wrapper_watchdog_loop())
+    logger.info(
+        "Wrapper watchdog loop started (every %ds, threshold: %d)",
+        _WRAPPER_WATCHDOG_INTERVAL,
+        _WRAPPER_WATCHDOG_FAILURE_THRESHOLD,
+    )
+
     yield
 
-    # Cancel background cleanup loop
+    # Cancel background tasks
     cleanup_task.cancel()
     keepalive_task.cancel()
-    try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await keepalive_task
-    except asyncio.CancelledError:
-        pass
+    wrapper_watchdog_task.cancel()
+    for task in (cleanup_task, keepalive_task, wrapper_watchdog_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     logger.info("Shutting down gamdl web server...")
 
 

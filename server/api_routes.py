@@ -418,10 +418,8 @@ async def system_stats(request: Request) -> dict:
     }
 
 
-@router.get("/wrapper/status")
-async def wrapper_status() -> dict:
-    """Check if the Wrapper service is reachable and decrypt port 10020 is responsive."""
-    import asyncio
+def check_wrapper_healthy() -> bool:
+    """Synchronous check if wrapper account HTTP port and decrypt TCP socket are both healthy."""
     import socket
     import urllib.request
     import urllib.error
@@ -430,25 +428,93 @@ async def wrapper_status() -> dict:
     account_url = cfg.wrapper_account_url  # e.g. http://127.0.0.1:30020/
     decrypt_ip = cfg.wrapper_decrypt_ip    # e.g. 127.0.0.1:10020
 
-    def _ping():
-        # 1. Check account HTTP port 30020
-        try:
-            req = urllib.request.Request(account_url, method="GET")
-            urllib.request.urlopen(req, timeout=2)
-        except Exception:
-            return False
+    # 1. Check account HTTP port 30020
+    try:
+        req = urllib.request.Request(account_url, method="GET")
+        urllib.request.urlopen(req, timeout=2)
+    except Exception:
+        return False
 
-        # 2. Check decrypt TCP socket port 10020
-        try:
-            host, port_str = decrypt_ip.split(":")
-            with socket.create_connection((host, int(port_str)), timeout=2.0):
+    # 2. Check decrypt TCP socket port 10020
+    try:
+        host, port_str = decrypt_ip.split(":")
+        with socket.create_connection((host, int(port_str)), timeout=2.0):
+            pass
+    except Exception:
+        return False
+
+    return True
+
+
+def do_wrapper_restart() -> dict:
+    """Kill any existing wrapper processes reliably via psutil and start a fresh daemon."""
+    import subprocess
+    import signal
+    import urllib.request
+    import urllib.error
+
+    wrapper_bin = "/app/Wrapper/wrapper"
+
+    # 1. Kill any existing wrapper processes reliably via psutil (does not rely on pkill)
+    try:
+        for p in psutil.process_iter(["pid", "name", "cmdline"]):
+            try:
+                name = p.info.get("name") or ""
+                cmdline = " ".join(p.info.get("cmdline") or [])
+                if "wrapper" in name.lower() or "main" in name.lower() or "wrapper" in cmdline.lower():
+                    if p.pid != os.getpid():
+                        p.send_signal(signal.SIGKILL)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-        except Exception:
-            return False
+    except Exception as e:
+        logger.warning(f"Error terminating old wrapper processes: {e}")
 
-        return True
+    # Reap zombies if uvicorn is PID 1
+    try:
+        while True:
+            pid, status = os.waitpid(-1, os.WNOHANG)
+            if pid <= 0:
+                break
+    except Exception:
+        pass
 
-    available = await asyncio.get_event_loop().run_in_executor(None, _ping)
+    import time
+    time.sleep(1)
+
+    # 2. Check if the wrapper binary exists
+    if not os.path.isfile(wrapper_bin):
+        return {"success": False, "message": "Wrapper binary not found"}
+
+    # 3. Start the wrapper in the background
+    try:
+        subprocess.Popen(
+            ["./wrapper", "-H", "0.0.0.0"],
+            cwd="/app/Wrapper",
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception as e:
+        return {"success": False, "message": f"Failed to start: {e}"}
+
+    # 4. Wait and then ping both ports to verify it started
+    time.sleep(3)
+
+    cfg = _get_current_config()
+    url = cfg.wrapper_account_url
+    try:
+        req = urllib.request.Request(url, method="GET")
+        urllib.request.urlopen(req, timeout=3)
+        return {"success": True, "message": "Wrapper restarted successfully"}
+    except Exception:
+        return {"success": False, "message": "Wrapper successfully started, please refresh the page"}
+
+
+@router.get("/wrapper/status")
+async def wrapper_status() -> dict:
+    """Check if the Wrapper service is reachable and decrypt port 10020 is responsive."""
+    import asyncio
+    available = await asyncio.get_event_loop().run_in_executor(None, check_wrapper_healthy)
     return {"available": available}
 
 
@@ -460,10 +526,6 @@ _WRAPPER_RESTART_COOLDOWN = 60  # Reduced cooldown to 60s for better user experi
 async def wrapper_restart() -> dict:
     """Kill existing Wrapper process using psutil and start a new one."""
     import asyncio
-    import subprocess
-    import urllib.request
-    import urllib.error
-    import signal
 
     global _last_wrapper_restart
     now = time.time()
@@ -472,65 +534,7 @@ async def wrapper_restart() -> dict:
         return {"success": False, "message": f"Please wait {remaining}s before restarting again"}
     _last_wrapper_restart = now
 
-    wrapper_bin = "/app/Wrapper/wrapper"
-
-    def _do_restart():
-        # 1. Kill any existing wrapper processes reliably via psutil (does not rely on pkill)
-        try:
-            for p in psutil.process_iter(["pid", "name", "cmdline"]):
-                try:
-                    name = p.info.get("name") or ""
-                    cmdline = " ".join(p.info.get("cmdline") or [])
-                    if "wrapper" in name.lower() or "main" in name.lower() or "wrapper" in cmdline.lower():
-                        if p.pid != os.getpid():
-                            p.send_signal(signal.SIGKILL)
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
-        except Exception as e:
-            logger.warning(f"Error terminating old wrapper processes: {e}")
-
-        # Reap zombies if uvicorn is PID 1
-        try:
-            while True:
-                pid, status = os.waitpid(-1, os.WNOHANG)
-                if pid <= 0:
-                    break
-        except Exception:
-            pass
-
-        import time
-        time.sleep(1)
-
-        # 2. Check if the wrapper binary exists
-        import os
-        if not os.path.isfile(wrapper_bin):
-            return {"success": False, "message": "Wrapper binary not found"}
-
-        # 3. Start the wrapper in the background
-        try:
-            subprocess.Popen(
-                ["./wrapper", "-H", "0.0.0.0"],
-                cwd="/app/Wrapper",
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-        except Exception as e:
-            return {"success": False, "message": f"Failed to start: {e}"}
-
-        # 4. Wait and then ping both ports to verify it started
-        time.sleep(3)
-
-        cfg = _get_current_config()
-        url = cfg.wrapper_account_url
-        try:
-            req = urllib.request.Request(url, method="GET")
-            urllib.request.urlopen(req, timeout=3)
-            return {"success": True, "message": "Wrapper restarted successfully"}
-        except Exception:
-            return {"success": False, "message": "Wrapper successfully started, please refresh the page"}
-
-    result = await asyncio.get_event_loop().run_in_executor(None, _do_restart)
+    result = await asyncio.get_event_loop().run_in_executor(None, do_wrapper_restart)
     return result
 
 
