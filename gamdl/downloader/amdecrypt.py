@@ -431,8 +431,16 @@ async def decrypt_samples(
                 writer.write(sample.data[:truncated_len])
                 await writer.drain()
 
-                # Read decrypted data
-                decrypted_sample = await reader.readexactly(truncated_len)
+                # Read decrypted data with a 20-second timeout to prevent indefinite hangs
+                try:
+                    decrypted_sample = await asyncio.wait_for(
+                        reader.readexactly(truncated_len), timeout=20.0
+                    )
+                except asyncio.TimeoutError:
+                    raise TimeoutError(
+                        f"Wrapper timed out after 20s while decrypting sample {i + 1}/{total_samples} "
+                        f"on {wrapper_ip}. The decryption daemon may be hung."
+                    )
                 if len(decrypted_sample) != truncated_len:
                     raise IOError(
                         f"Short read: got {len(decrypted_sample)}, expected {truncated_len}"
