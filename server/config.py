@@ -30,6 +30,7 @@ class ServerConfig:
     save_cover: bool = False
     save_animated_artwork: bool = False
     save_playlist: bool = False
+    playlist_mode: bool = False
     cover_format: str = "jpg"
     cover_size: int = 1200
 

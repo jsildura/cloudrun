@@ -5,7 +5,7 @@ from ..interface.interface_song import AppleMusicSongInterface
 from ..interface.types import DecryptionKeyAv
 from ..utils import async_subprocess
 from .amdecrypt import decrypt_file
-from .constants import DEFAULT_SONG_DECRYPTION_KEY
+from .constants import DEFAULT_SONG_DECRYPTION_KEY, PLAYLIST_MEDIA_TYPE
 from .downloader_base import AppleMusicBaseDownloader
 from .enums import RemuxMode
 from .types import DownloadItem
@@ -23,6 +23,7 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
         save_synced_lyrics: bool = False,
         use_album_date: bool = False,
         fetch_extra_tags: bool = False,
+        playlist_mode: bool = False,
     ):
         self.__dict__.update(base_downloader.__dict__)
         self.interface = interface
@@ -33,6 +34,7 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
         self.save_synced_lyrics = save_synced_lyrics
         self.use_album_date = use_album_date
         self.fetch_extra_tags = fetch_extra_tags
+        self.playlist_mode = playlist_mode or getattr(base_downloader, "playlist_mode", False)
 
     async def get_download_item(
         self,
@@ -62,6 +64,13 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
                 song_metadata,
             )
 
+        is_catalog_playlist = (
+            playlist_metadata is not None
+            and playlist_metadata.get("type") in PLAYLIST_MEDIA_TYPE
+            and not playlist_metadata.get("type", "").startswith("library")
+            and str(playlist_metadata.get("id", "")).startswith("pl.")
+        )
+
         if playlist_metadata:
             download_item.playlist_tags = self.get_playlist_tags(
                 playlist_metadata,
@@ -70,6 +79,27 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
             download_item.playlist_file_path = self.get_playlist_file_path(
                 download_item.playlist_tags,
             )
+
+        if self.playlist_mode and is_catalog_playlist:
+            playlist_attrs = playlist_metadata.get("attributes", {})
+            playlist_name = playlist_attrs.get("name")
+            if playlist_name:
+                download_item.media_tags.album = playlist_name
+
+            playlist_artist = playlist_attrs.get("artistName") or playlist_attrs.get("curatorName")
+            if playlist_artist:
+                download_item.media_tags.album_artist = playlist_artist
+
+            download_item.media_tags.disc = 1
+            download_item.media_tags.disc_total = 1
+
+            if download_item.playlist_tags and download_item.playlist_tags.playlist_track:
+                download_item.media_tags.track = download_item.playlist_tags.playlist_track
+
+            tracks_list = playlist_metadata.get("relationships", {}).get("tracks", {}).get("data", [])
+            total_tracks = playlist_attrs.get("trackCount") or len(tracks_list) or download_item.media_tags.track_total
+            if total_tracks:
+                download_item.media_tags.track_total = int(total_tracks)
 
         download_item.final_path = self.get_final_path(
             download_item.media_tags,
@@ -111,8 +141,14 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
             else:
                 download_item.decryption_key = None
 
+        cover_source_metadata = (
+            playlist_metadata
+            if (self.playlist_mode and is_catalog_playlist and playlist_metadata.get("attributes", {}).get("artwork"))
+            else song_metadata
+        )
+
         download_item.cover_url_template = self.interface.get_cover_url_template(
-            song_metadata,
+            cover_source_metadata,
             self.cover_format,
         )
         download_item.cover_url = self.interface.get_cover_url(

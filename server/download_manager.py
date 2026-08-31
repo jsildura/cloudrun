@@ -270,6 +270,7 @@ class DownloadManager:
             cover_size=config.cover_size,
             truncate=config.truncate,
             silent=True,
+            playlist_mode=config.playlist_mode,
         )
         song_downloader = AppleMusicSongDownloader(
             base_downloader=base_downloader,
@@ -281,6 +282,7 @@ class DownloadManager:
             save_synced_lyrics=config.save_synced_lyrics,
             use_album_date=config.use_album_date,
             fetch_extra_tags=config.fetch_extra_tags,
+            playlist_mode=config.playlist_mode,
         )
         music_video_downloader = AppleMusicMusicVideoDownloader(
             base_downloader=base_downloader,
@@ -290,6 +292,7 @@ class DownloadManager:
             ],
             remux_format=RemuxFormatMusicVideo(config.music_video_remux_format),
             resolution=MusicVideoResolution(config.music_video_resolution),
+            playlist_mode=config.playlist_mode,
         )
         uploaded_video_downloader = AppleMusicUploadedVideoDownloader(
             base_downloader=base_downloader,

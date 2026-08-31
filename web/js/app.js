@@ -151,6 +151,7 @@
         cover_size: 1200,
         save_cover: true,
         save_animated_artwork: false,
+        playlist_mode: false,
         overwrite: false,
         download_mode: 'ytdlp',
         remux_mode: 'ffmpeg',
@@ -442,6 +443,7 @@
             'cfg-cover-size': 'cover_size',
             'cfg-save-cover': 'save_cover',
             'cfg-save-animated-artwork': 'save_animated_artwork',
+            'cfg-playlist-mode': 'playlist_mode',
             'cfg-overwrite': 'overwrite',
             'cfg-download-mode': 'download_mode',
             'cfg-remux-mode': 'remux_mode',
@@ -485,6 +487,7 @@
             cover_size: parseInt($('#cfg-cover-size').value) || 1200,
             save_cover: $('#cfg-save-cover').checked,
             save_animated_artwork: $('#cfg-save-animated-artwork').checked,
+            playlist_mode: $('#cfg-playlist-mode')?.checked ?? false,
             overwrite: $('#cfg-overwrite').checked,
             download_mode: $('#cfg-download-mode').value,
             remux_mode: $('#cfg-remux-mode').value,
@@ -2171,9 +2174,8 @@
                     if (track.synced_lyrics_file_path) {
                         fetchLyricsBlob(data.job_id, i);
                     }
-                    // Cover art: for albums, only fetch once (first track);
-                    // for playlists, fetch the main playlist cover once
-                    if (track.cover_file_path && !isPlaylist && !albumCoverFetched) {
+                    // Cover art: fetch cover once (first completed track)
+                    if (track.cover_file_path && !albumCoverFetched) {
                         fetchCoverBlob(data.job_id, i);
                     }
                 }

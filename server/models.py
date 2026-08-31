@@ -113,6 +113,7 @@ class ConfigUpdate(BaseModel):
     save_cover: bool | None = None
     save_animated_artwork: bool | None = None
     save_playlist: bool | None = None
+    playlist_mode: bool | None = None
     cover_format: str | None = None
     cover_size: int | None = None
     rate_limit_delay: float | None = None

@@ -4,6 +4,7 @@ from ..interface.enums import MusicVideoCodec, MusicVideoResolution
 from ..interface.interface_music_video import AppleMusicMusicVideoInterface
 from ..interface.types import DecryptionKeyAv
 from ..utils import async_subprocess
+from .constants import PLAYLIST_MEDIA_TYPE
 from .downloader_base import AppleMusicBaseDownloader
 from .enums import RemuxFormatMusicVideo, RemuxMode
 from .types import DownloadItem
@@ -20,12 +21,14 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
         ],
         remux_format: RemuxFormatMusicVideo = RemuxFormatMusicVideo.M4V,
         resolution: MusicVideoResolution = MusicVideoResolution.R1080P,
+        playlist_mode: bool = False,
     ):
         self.__dict__.update(base_downloader.__dict__)
         self.interface = interface
         self.codec_priority = codec_priority
         self.remux_format = remux_format
         self.resolution = resolution
+        self.playlist_mode = playlist_mode or getattr(base_downloader, "playlist_mode", False)
 
     async def remux_mp4box(
         self,
@@ -40,12 +43,7 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
             input_path_audio,
             "-add",
             input_path_video,
-            "-itags",
-            "artist=placeholder",
-            "-keep-utc",
-            "-new",
             output_path,
-            silent=self.silent,
         )
 
     async def remux_ffmpeg(
@@ -53,34 +51,46 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
         input_path_video: str,
         input_path_audio: str,
         output_path: str,
-        decryption_key: str = None,
     ):
-        if decryption_key:
-            key = [
-                "-decryption_key",
-                decryption_key,
-            ]
-        else:
-            key = []
-
         await async_subprocess(
             self.full_ffmpeg_path,
             "-loglevel",
             "error",
             "-y",
-            *key,
             "-i",
             input_path_video,
             "-i",
             input_path_audio,
             "-c",
             "copy",
-            "-c:s",
-            "mov_text",
             "-movflags",
             "+faststart",
             output_path,
-            silent=self.silent,
+        )
+
+    async def get_decryption_key(
+        self,
+        stream_info: DecryptionKeyAv,
+    ) -> DecryptionKeyAv:
+        if stream_info.audio_track:
+            audio_decryption_key = await self.interface.get_decryption_key(
+                stream_info.audio_track.widevine_pssh,
+                self.cdm,
+            )
+        else:
+            audio_decryption_key = None
+
+        if stream_info.video_track:
+            video_decryption_key = await self.interface.get_decryption_key(
+                stream_info.video_track.widevine_pssh,
+                self.cdm,
+            )
+        else:
+            video_decryption_key = None
+
+        return DecryptionKeyAv(
+            audio_track=audio_decryption_key,
+            video_track=video_decryption_key,
         )
 
     async def decrypt_mp4decrypt(
@@ -160,6 +170,13 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
             itunes_page_metadata,
         )
 
+        is_catalog_playlist = (
+            playlist_metadata is not None
+            and playlist_metadata.get("type") in PLAYLIST_MEDIA_TYPE
+            and not playlist_metadata.get("type", "").startswith("library")
+            and str(playlist_metadata.get("id", "")).startswith("pl.")
+        )
+
         if playlist_metadata:
             download_item.playlist_tags = self.get_playlist_tags(
                 playlist_metadata,
@@ -169,6 +186,27 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
                 download_item.playlist_tags,
             )
 
+        if self.playlist_mode and is_catalog_playlist:
+            playlist_attrs = playlist_metadata.get("attributes", {})
+            playlist_name = playlist_attrs.get("name")
+            if playlist_name:
+                download_item.media_tags.album = playlist_name
+
+            playlist_artist = playlist_attrs.get("artistName") or playlist_attrs.get("curatorName")
+            if playlist_artist:
+                download_item.media_tags.album_artist = playlist_artist
+
+            download_item.media_tags.disc = 1
+            download_item.media_tags.disc_total = 1
+
+            if download_item.playlist_tags and download_item.playlist_tags.playlist_track:
+                download_item.media_tags.track = download_item.playlist_tags.playlist_track
+
+            tracks_list = playlist_metadata.get("relationships", {}).get("tracks", {}).get("data", [])
+            total_tracks = playlist_attrs.get("trackCount") or len(tracks_list) or download_item.media_tags.track_total
+            if total_tracks:
+                download_item.media_tags.track_total = int(total_tracks)
+
         download_item.stream_info = await self.interface.get_stream_info(
             music_video_metadata,
             itunes_page_metadata,
@@ -176,9 +214,8 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
             self.resolution,
         )
 
-        download_item.decryption_key = await self.interface.get_decryption_key(
+        download_item.decryption_key = await self.get_decryption_key(
             download_item.stream_info,
-            self.cdm,
         )
 
         download_item.random_uuid = self.get_random_uuid()
@@ -198,11 +235,17 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
         download_item.final_path = self.get_final_path(
             download_item.media_tags,
             Path(download_item.staged_path).suffix,
-            playlist_metadata,
+            download_item.playlist_tags,
+        )
+
+        cover_source_metadata = (
+            playlist_metadata
+            if (self.playlist_mode and is_catalog_playlist and playlist_metadata.get("attributes", {}).get("artwork"))
+            else music_video_metadata
         )
 
         download_item.cover_url_template = self.interface.get_cover_url_template(
-            music_video_metadata,
+            cover_source_metadata,
             self.cover_format,
         )
         download_item.cover_url = self.interface.get_cover_url(

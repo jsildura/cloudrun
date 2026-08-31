@@ -46,6 +46,7 @@ class AppleMusicBaseDownloader:
         cover_size: int = 1200,
         truncate: int = None,
         silent: bool = False,
+        playlist_mode: bool = False,
     ):
         self.output_path = output_path
         self.temp_path = temp_path
@@ -74,6 +75,7 @@ class AppleMusicBaseDownloader:
         self.cover_size = cover_size
         self.truncate = truncate
         self.silent = silent
+        self.playlist_mode = playlist_mode
         self.initialize()
 
     def initialize(self):
