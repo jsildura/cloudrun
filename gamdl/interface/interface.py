@@ -79,7 +79,8 @@ class AppleMusicInterface:
             cover_url_template = self._get_raw_cover_url(
                 metadata["attributes"]["artwork"]["url"]
             )
-        cover_url_template = metadata["attributes"]["artwork"]["url"]
+        else:
+            cover_url_template = metadata["attributes"]["artwork"]["url"]
 
         logger.debug(f"Cover URL template: {cover_url_template}")
         return cover_url_template
@@ -101,18 +102,21 @@ class AppleMusicInterface:
         cover_size: int,
         cover_format: CoverFormat,
     ) -> str:
-        cover_url = re.sub(
-            r"\{w\}x\{h\}([a-z]{2})\.jpg",
-            (
-                f"{cover_size}x{cover_size}bb.{cover_format.value}"
-                if cover_format != CoverFormat.RAW
-                else ""
-            ),
-            cover_url_template,
-        )
+        if cover_format == CoverFormat.RAW:
+            raw_url = self._get_raw_cover_url(cover_url_template)
+            return re.sub(r"/\{w\}x\{h\}.*$", "", raw_url)
 
-        logger.debug(f"Cover URL: {cover_url}")
-        return cover_url
+        ext = cover_format.value
+        url = cover_url_template
+        if "{f}" in url:
+            url = url.replace("{f}", ext)
+        else:
+            url = re.sub(r"\.(jpg|png|webp)(\?.*)?$", f".{ext}\\2", url)
+
+        url = url.replace("{w}", str(cover_size)).replace("{h}", str(cover_size))
+
+        logger.debug(f"Cover URL: {url}")
+        return url
 
     @alru_cache()
     async def get_cover_file_extension(
@@ -123,12 +127,11 @@ class AppleMusicInterface:
         if cover_format != CoverFormat.RAW:
             return f".{cover_format.value}"
 
-        cover_url = self.get_cover_url(cover_url)
         cover_bytes = await self.get_cover_bytes(cover_url)
         if cover_bytes is None:
             return None
 
-        image_obj = Image.open(BytesIO(self.get_cover_bytes(cover_url)))
+        image_obj = Image.open(BytesIO(cover_bytes))
         image_format = image_obj.format.lower()
         return IMAGE_FILE_EXTENSION_MAP.get(
             image_format,
