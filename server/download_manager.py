@@ -53,8 +53,8 @@ _download_semaphore = asyncio.Semaphore(2)
 # Ordered list of (job_id, DownloadJob) tuples currently waiting for a slot
 _waiting_jobs: list[tuple[str, object]] = []
 
-# Minimum free disk space (bytes) required to start a download
-_MIN_FREE_DISK_BYTES = 200 * 1024 * 1024  # 200 MB
+# Minimum free disk space (bytes) required to start a download (1 GB emergency threshold)
+_MIN_FREE_DISK_BYTES = 1024 * 1024 * 1024  # 1 GB
 
 # How long to keep completed jobs in memory before eviction (safety net)
 _STALE_JOB_TTL = 300  # 5 minutes — primary cleanup is event-driven from frontend
@@ -505,11 +505,42 @@ class DownloadManager:
             self._job_finish_times.pop(jid, None)
             logger.info("Evicted stale job %s", jid)
 
-    @staticmethod
-    def _check_disk_space() -> bool:
-        """Return True if there is enough free disk space to start a download."""
+    @classmethod
+    def _emergency_cleanup_tmp(cls) -> None:
+        """Emergency cleanup: remove all gamdl temp directories older than 2 minutes in /tmp."""
+        logger.warning("Low disk space detected! Running emergency cleanup pass on /tmp...")
+        now = time.time()
+        try:
+            for item in Path("/tmp").glob("gamdl_*"):
+                try:
+                    # Remove directories or files older than 2 minutes
+                    if item.is_dir() and (now - item.stat().st_mtime > 120):
+                        shutil.rmtree(item, ignore_errors=True)
+                    elif item.is_file() and (now - item.stat().st_mtime > 120):
+                        item.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            # Also clean orphan artwork files in /tmp
+            for item in Path("/tmp").glob("artwork_*.mp4"):
+                try:
+                    if item.is_file() and (now - item.stat().st_mtime > 120):
+                        item.unlink(missing_ok=True)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error("Emergency cleanup error: %s", e)
+
+    @classmethod
+    def _check_disk_space(cls) -> bool:
+        """Return True if there is at least 1GB of free space in /tmp.
+        If space is low, automatically executes an immediate emergency cleanup pass
+        to reclaim disk space before rejecting the job.
+        """
         try:
             usage = shutil.disk_usage('/tmp')
+            if usage.free < _MIN_FREE_DISK_BYTES:
+                cls._emergency_cleanup_tmp()
+                usage = shutil.disk_usage('/tmp')
             return usage.free >= _MIN_FREE_DISK_BYTES
         except Exception:
             return True  # If we can't check, allow the download
@@ -519,11 +550,12 @@ class DownloadManager:
         # Evict old completed jobs to free memory
         self._evict_stale_jobs()
 
-        # Pre-check disk space
+        # Pre-check disk space (1GB emergency threshold)
         if not self._check_disk_space():
+            free_mb = round(shutil.disk_usage('/tmp').free / 1048576)
             raise ValueError(
-                "Server disk space is running low. "
-                "Please wait for current downloads to finish and try again."
+                f"Server disk space is critically low ({free_mb} MB available, 1024 MB required). "
+                "An emergency cleanup pass was executed. Please wait for active downloads to finish and try again."
             )
 
         job_id = str(uuid.uuid4())[:8]
