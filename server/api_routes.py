@@ -664,10 +664,14 @@ async def save_track_to_device(job_id: str, track_index: int, request: Request):
     logger.info("Serving file for job=%s track=%d: %s (%d bytes)", job_id, track_index, file_path.name, file_path.stat().st_size)
 
     # Compute relative path from output_path for ZIP folder structure
-    try:
-        relative_path = str(file_path.resolve().relative_to(Path(cfg.output_path).resolve()))
-    except ValueError:
-        relative_path = file_path.name
+    if track.relative_path:
+        relative_path = track.relative_path
+    else:
+        try:
+            temp_dir = dm._job_temp_dirs.get(job_id) or cfg.output_path
+            relative_path = str(file_path.resolve().relative_to(Path(temp_dir).resolve()))
+        except ValueError:
+            relative_path = file_path.name
 
     # Stream file without Content-Disposition to prevent download manager
     # extensions (IDM, etc.) from intercepting JavaScript fetch() calls.

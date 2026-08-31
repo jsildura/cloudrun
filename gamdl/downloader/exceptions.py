@@ -4,6 +4,7 @@ from ..utils import GamdlError
 class MediaFileExists(GamdlError):
     def __init__(self, media_path: str):
         super().__init__(f"Media file already exists at path: {media_path}")
+        self.media_path = media_path
 
 
 class NotStreamable(GamdlError):

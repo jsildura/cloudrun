@@ -39,6 +39,12 @@ from gamdl.interface import (
     SyncedLyricsFormat,
     UploadedVideoQuality,
 )
+from gamdl.downloader.exceptions import MediaFileExists
+from gamdl.downloader.constants import (
+    ALBUM_MEDIA_TYPE,
+    PLAYLIST_MEDIA_TYPE,
+    VALID_URL_PATTERN,
+)
 from gamdl.utils import GamdlError
 
 from .config import ServerConfig
@@ -59,12 +65,12 @@ _MIN_FREE_DISK_BYTES = 1024 * 1024 * 1024  # 1 GB
 # How long to keep completed jobs in memory before eviction (safety net)
 _STALE_JOB_TTL = 300  # 5 minutes — primary cleanup is event-driven from frontend
 
-# Tracks which jobs currently hold a semaphore slot and when they acquired it
+# Tracks which jobs currently hold a semaphore slot and their progress
 # Key = job_id, Value = timestamp when the slot was acquired
 _active_jobs: dict[str, float] = {}
 
-# Maximum time (seconds) a job can hold a semaphore slot before being force-cancelled
-_MAX_JOB_HOLD_TIME = 600  # 10 minutes
+# Maximum idle time (seconds) with zero track activity before watchdog force-cancels
+_MAX_JOB_IDLE_TIME = 300  # 5 minutes of complete inactivity
 
 
 class DownloadManager:
@@ -179,7 +185,34 @@ class DownloadManager:
             self._itunes_api = None
             raise
 
-    def _build_downloader(self, config: ServerConfig, job_id: str | None = None) -> AppleMusicDownloader:
+    def _get_output_dir_for_job(self, job_id: str, url: str | None = None) -> str:
+        """Get or create the output directory for a job.
+        For collections (albums/playlists), uses a deterministic folder name based on
+        storefront/media-id so retries and re-downloads can resume existing tracks.
+        """
+        if job_id in self._job_temp_dirs:
+            return self._job_temp_dirs[job_id]
+
+        if url:
+            match = VALID_URL_PATTERN.match(url)
+            if match:
+                groups = match.groupdict()
+                url_type = groups.get("type") or groups.get("library_type")
+                # Single songs within album have sub_id -> keep per-job folder
+                if not groups.get("sub_id") and (url_type in ALBUM_MEDIA_TYPE or url_type in PLAYLIST_MEDIA_TYPE):
+                    media_id = groups.get("id") or groups.get("library_id") or "collection"
+                    safe_id = "".join(c for c in media_id if c.isalnum() or c in ("-", "_"))[:40]
+                    dir_path = Path(tempfile.gettempdir()) / f"gamdl_cache_{url_type}_{safe_id}"
+                    dir_path.mkdir(parents=True, exist_ok=True)
+                    self._job_temp_dirs[job_id] = str(dir_path)
+                    logger.info("Using deterministic cache directory for %s %s: %s", url_type, media_id, dir_path)
+                    return str(dir_path)
+
+        temp_dir = tempfile.mkdtemp(prefix=f"gamdl_{job_id[:8]}_")
+        self._job_temp_dirs[job_id] = temp_dir
+        return temp_dir
+
+    def _build_downloader(self, config: ServerConfig, job_id: str | None = None, url: str | None = None) -> AppleMusicDownloader:
         """Build a full gamdl downloader from the current config."""
         interface = AppleMusicInterface(
             self._apple_music_api,
@@ -192,13 +225,7 @@ class DownloadManager:
         # Use a temp directory so files aren't saved to the user's visible filesystem.
         # Files are served via the browser save dialog instead.
         if job_id:
-            # Reuse existing temp dir for retries, create new one for first download
-            if job_id in self._job_temp_dirs:
-                output_path = self._job_temp_dirs[job_id]
-            else:
-                temp_dir = tempfile.mkdtemp(prefix=f"gamdl_{job_id[:8]}_")
-                self._job_temp_dirs[job_id] = temp_dir
-                output_path = temp_dir
+            output_path = self._get_output_dir_for_job(job_id, url=url or (self.jobs.get(job_id).url if job_id in self.jobs else None))
         else:
             output_path = config.output_path
 
@@ -474,14 +501,18 @@ class DownloadManager:
 
     def _cleanup_job(self, job_id: str) -> None:
         """Remove temp directory and in-memory caches for a completed job."""
-        # Remove temp directory from disk
+        # Remove temp directory from disk (preserve gamdl_cache_* deterministic directories for resumed downloads)
         temp_dir = self._job_temp_dirs.pop(job_id, None)
         if temp_dir:
-            try:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-                logger.info("Cleaned up temp dir for job %s: %s", job_id, temp_dir)
-            except Exception as e:
-                logger.warning("Failed to clean temp dir %s: %s", temp_dir, e)
+            dir_name = Path(temp_dir).name
+            if dir_name.startswith("gamdl_cache_"):
+                logger.info("Preserving collection cache directory for job %s: %s", job_id, temp_dir)
+            else:
+                try:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    logger.info("Cleaned up temp dir for job %s: %s", job_id, temp_dir)
+                except Exception as e:
+                    logger.warning("Failed to clean temp dir %s: %s", temp_dir, e)
 
         # Remove cached download queue (can be large)
         self._job_download_queues.pop(job_id, None)
@@ -684,19 +715,22 @@ class DownloadManager:
             pass  # Was never queued (semaphore was free)
         try:
             job.error_message = None  # Clear queue message
-            # 5-minute timeout — safety net for downloads that hang despite
-            # the connectivity probe passing (e.g. mid-download network drop)
+            job.last_active_time = time.time()
+            # Dynamic timeout: collections with many tracks need ample time.
+            # Base 1800s (30m) + up to 180s per track for rate limits and decryption.
+            estimated_tracks = len(job.tracks) if job.tracks else 30
+            job_timeout = max(1800, estimated_tracks * 180)
             await asyncio.wait_for(
                 self._process_job_inner(job_id, url, config),
-                timeout=300,  # 5 minutes
+                timeout=job_timeout,
             )
         except asyncio.TimeoutError:
             job.stage = DownloadStage.ERROR
             job.error_message = (
-                "Download timed out after 5 minutes. "
+                f"Download timed out after {int(job_timeout // 60)} minutes. "
                 "The server may be experiencing network issues. Please try again."
             )
-            logger.error("Job %s timed out after 300s", job_id)
+            logger.error("Job %s timed out after %ds", job_id, job_timeout)
             await self._broadcast_job(job)
             self._cleanup_job(job_id)
         finally:
@@ -837,6 +871,42 @@ class DownloadManager:
                 if job.stage == DownloadStage.CANCELLED:
                     break
 
+                job.last_active_time = time.time()
+
+                # --- TRACK RESUMPTION PRE-CHECK ---
+                # If track was already downloaded to disk previously (e.g. from an earlier cancelled run),
+                # reuse it immediately and do not download again.
+                final_p = Path(download_item.final_path) if getattr(download_item, "final_path", None) else None
+                if final_p and final_p.exists() and final_p.stat().st_size > 1024:
+                    logger.info(
+                        "Track %d/%d already exists on disk (%d bytes): %s — reusing file",
+                        i + 1, len(download_queue), final_p.stat().st_size, final_p,
+                    )
+                    job.current_track = i + 1
+                    job.tracks[i].stage = DownloadStage.DONE
+                    job.tracks[i].file_path = str(final_p)
+                    try:
+                        temp_dir = self._job_temp_dirs.get(job_id)
+                        if temp_dir:
+                            job.tracks[i].relative_path = str(
+                                final_p.resolve().relative_to(Path(temp_dir).resolve())
+                            )
+                    except ValueError:
+                        pass
+
+                    # Check for existing synced lyrics and cover files
+                    if getattr(download_item, "synced_lyrics_path", None):
+                        lyrics_path = Path(download_item.synced_lyrics_path)
+                        if lyrics_path.exists():
+                            job.tracks[i].synced_lyrics_file_path = str(lyrics_path)
+                    if getattr(download_item, "cover_path", None):
+                        cover_path = Path(download_item.cover_path)
+                        if cover_path.exists():
+                            job.tracks[i].cover_file_path = str(cover_path)
+
+                    await self._broadcast_job(job)
+                    continue
+
                 # Rate-limit delay before each track (except the first)
                 if i > 0:
                     await asyncio.sleep(config.rate_limit_delay)
@@ -852,6 +922,7 @@ class DownloadManager:
                 _used_fallback = False  # track whether we already tried the fallback
 
                 for attempt in range(max_retries + 1):
+                    job.last_active_time = time.time()
                     try:
                         result_item = await downloader.download(download_item)
                         job.tracks[i].stage = DownloadStage.DONE
@@ -908,6 +979,18 @@ class DownloadManager:
                                 "Track %d/%d done but no final_path on result item",
                                 i + 1, len(download_queue),
                             )
+                    except MediaFileExists as e:
+                        logger.info("Track %d/%d file already exists: %s — reusing file", i + 1, len(download_queue), e.media_path)
+                        job.tracks[i].stage = DownloadStage.DONE
+                        job.tracks[i].file_path = str(e.media_path)
+                        try:
+                            temp_dir = self._job_temp_dirs.get(job_id)
+                            if temp_dir:
+                                job.tracks[i].relative_path = str(
+                                    Path(e.media_path).resolve().relative_to(Path(temp_dir).resolve())
+                                )
+                        except ValueError:
+                            pass
                         success = True
                         break
                     except GamdlError as e:
@@ -1134,15 +1217,20 @@ class DownloadManager:
             job.stage = DownloadStage.CANCELLED
             logger.info(f"Job {job_id} cancelled")
             await self._broadcast_job(job)
-            # Clean up cancelled job's temp dir immediately
-            self._cleanup_job(job_id)
+            # For non-collections (single tracks), clean up immediately.
+            # For collections (albums/playlists), preserve files in deterministic cache
+            # so redownloading or retrying resumes where it left off.
+            if not self._is_collection_url(url):
+                self._cleanup_job(job_id)
         except Exception as e:
             job.stage = DownloadStage.ERROR
             job.error_message = str(e)
             logger.error(f"Job {job_id} failed: {e}", exc_info=True)
             await self._broadcast_job(job)
-            # Clean up errored job's temp dir immediately
-            self._cleanup_job(job_id)
+            # For non-collections (single tracks), clean up immediately.
+            # For collections, preserve files so retries can resume.
+            if not self._is_collection_url(url):
+                self._cleanup_job(job_id)
 
     def cancel_job(self, job_id: str) -> bool:
         """Cancel a running job."""
@@ -1342,59 +1430,90 @@ class DownloadManager:
 
             download_item = download_queue[track_index]
 
-            # Retry with backoff for rate limiting
-            max_retries = 3
-            retry_delays = [10, 30, 60]
-
-            for attempt in range(max_retries + 1):
+            # Pre-check if already on disk
+            final_p = Path(download_item.final_path) if getattr(download_item, "final_path", None) else None
+            if final_p and final_p.exists() and final_p.stat().st_size > 1024:
+                logger.info("[Retry] Track %d already on disk (%d bytes): %s", track_index, final_p.stat().st_size, final_p)
+                track.stage = DownloadStage.DONE
+                track.file_path = str(final_p)
                 try:
-                    result_item = await downloader.download(download_item)
-                    track.stage = DownloadStage.DONE
-                    if hasattr(result_item, 'final_path') and result_item.final_path:
-                        track.file_path = str(result_item.final_path)
+                    _td = self._job_temp_dirs.get(job_id)
+                    if _td:
+                        track.relative_path = str(final_p.resolve().relative_to(Path(_td).resolve()))
+                except ValueError:
+                    pass
+                if getattr(download_item, "synced_lyrics_path", None) and Path(download_item.synced_lyrics_path).exists():
+                    track.synced_lyrics_file_path = str(download_item.synced_lyrics_path)
+                if getattr(download_item, "cover_path", None) and Path(download_item.cover_path).exists():
+                    track.cover_file_path = str(download_item.cover_path)
+                job.last_active_time = time.time()
+                await self._broadcast_job(job)
+            else:
+                # Retry with backoff for rate limiting
+                max_retries = 3
+                retry_delays = [10, 30, 60]
+
+                for attempt in range(max_retries + 1):
+                    job.last_active_time = time.time()
+                    try:
+                        result_item = await downloader.download(download_item)
+                        track.stage = DownloadStage.DONE
+                        if hasattr(result_item, 'final_path') and result_item.final_path:
+                            track.file_path = str(result_item.final_path)
+                            try:
+                                _td = self._job_temp_dirs.get(job_id)
+                                if _td:
+                                    track.relative_path = str(
+                                        Path(result_item.final_path).resolve().relative_to(Path(_td).resolve())
+                                    )
+                            except ValueError:
+                                pass
+                            # Track synced lyrics file if it was saved
+                            if hasattr(result_item, 'synced_lyrics_path') and result_item.synced_lyrics_path:
+                                lyrics_path = Path(result_item.synced_lyrics_path)
+                                if lyrics_path.exists():
+                                    track.synced_lyrics_file_path = str(lyrics_path)
+                            # Track cover file if it was saved
+                            if hasattr(result_item, 'cover_path') and result_item.cover_path:
+                                cover_path = Path(result_item.cover_path)
+                                if cover_path.exists():
+                                    track.cover_file_path = str(cover_path)
+                            # Cloud mode: upload to R2, generate signed URL, clean up local
+                            cfg = self._job_configs.get(job_id)
+                            if cfg and cfg.cloud_mode and self._storage and self._current_token:
+                                output_path = result_item.final_path
+                                object_key = self._storage.object_key(
+                                    user_token=self._current_token,
+                                    job_id=job_id,
+                                    filename=Path(output_path).name,
+                                    )
+                                self._storage.upload_file(output_path, object_key)
+                                track.download_url = self._storage.get_signed_url(object_key)
+                                Path(output_path).unlink(missing_ok=True)
+                        break
+                    except MediaFileExists as e:
+                        logger.info("[Retry] Track %d MediaFileExists: %s", track_index, e.media_path)
+                        track.stage = DownloadStage.DONE
+                        track.file_path = str(e.media_path)
                         try:
                             _td = self._job_temp_dirs.get(job_id)
                             if _td:
-                                track.relative_path = str(
-                                    Path(result_item.final_path).resolve().relative_to(Path(_td).resolve())
-                                )
+                                track.relative_path = str(Path(e.media_path).resolve().relative_to(Path(_td).resolve()))
                         except ValueError:
                             pass
-                        # Track synced lyrics file if it was saved
-                        if hasattr(result_item, 'synced_lyrics_path') and result_item.synced_lyrics_path:
-                            lyrics_path = Path(result_item.synced_lyrics_path)
-                            if lyrics_path.exists():
-                                track.synced_lyrics_file_path = str(lyrics_path)
-                        # Track cover file if it was saved
-                        if hasattr(result_item, 'cover_path') and result_item.cover_path:
-                            cover_path = Path(result_item.cover_path)
-                            if cover_path.exists():
-                                track.cover_file_path = str(cover_path)
-                        # Cloud mode: upload to R2, generate signed URL, clean up local
-                        cfg = self._job_configs.get(job_id)
-                        if cfg and cfg.cloud_mode and self._storage and self._current_token:
-                            output_path = result_item.final_path
-                            object_key = self._storage.object_key(
-                                user_token=self._current_token,
-                                job_id=job_id,
-                                filename=Path(output_path).name,
-                            )
-                            self._storage.upload_file(output_path, object_key)
-                            track.download_url = self._storage.get_signed_url(object_key)
-                            Path(output_path).unlink(missing_ok=True)
-                    break
-                except (GamdlError, Exception) as e:
-                    error_msg = str(e)
-                    if "429" in error_msg and attempt < max_retries:
-                        delay = retry_delays[attempt]
-                        track.error_message = f"Rate limited, retrying in {delay}s..."
-                        await self._broadcast_job(job)
-                        await asyncio.sleep(delay)
-                        track.error_message = None
-                        continue
-                    track.stage = DownloadStage.ERROR
-                    track.error_message = error_msg
-                    break
+                        break
+                    except (GamdlError, Exception) as e:
+                        error_msg = str(e)
+                        if "429" in error_msg and attempt < max_retries:
+                            delay = retry_delays[attempt]
+                            track.error_message = f"Rate limited, retrying in {delay}s..."
+                            await self._broadcast_job(job)
+                            await asyncio.sleep(delay)
+                            track.error_message = None
+                            continue
+                        track.stage = DownloadStage.ERROR
+                        track.error_message = error_msg
+                        break
 
         except Exception as e:
             track.stage = DownloadStage.ERROR
@@ -1474,10 +1593,32 @@ class DownloadManager:
                 await self._broadcast_job(job)
 
                 download_item = download_queue[track_index]
+
+                # Pre-check if already on disk
+                final_p = Path(download_item.final_path) if getattr(download_item, "final_path", None) else None
+                if final_p and final_p.exists() and final_p.stat().st_size > 1024:
+                    logger.info("[RetryAll] Track %d already on disk (%d bytes): %s", track_index, final_p.stat().st_size, final_p)
+                    track.stage = DownloadStage.DONE
+                    track.file_path = str(final_p)
+                    try:
+                        _td = self._job_temp_dirs.get(job_id)
+                        if _td:
+                            track.relative_path = str(final_p.resolve().relative_to(Path(_td).resolve()))
+                    except ValueError:
+                        pass
+                    if getattr(download_item, "synced_lyrics_path", None) and Path(download_item.synced_lyrics_path).exists():
+                        track.synced_lyrics_file_path = str(download_item.synced_lyrics_path)
+                    if getattr(download_item, "cover_path", None) and Path(download_item.cover_path).exists():
+                        track.cover_file_path = str(download_item.cover_path)
+                    job.last_active_time = time.time()
+                    await self._broadcast_job(job)
+                    continue
+
                 max_retries = 3
                 retry_delays = [10, 30, 60]
 
                 for attempt in range(max_retries + 1):
+                    job.last_active_time = time.time()
                     try:
                         result_item = await downloader.download(download_item)
                         track.stage = DownloadStage.DONE
@@ -1512,6 +1653,17 @@ class DownloadManager:
                                 self._storage.upload_file(output_path, object_key)
                                 track.download_url = self._storage.get_signed_url(object_key)
                                 Path(output_path).unlink(missing_ok=True)
+                        break
+                    except MediaFileExists as e:
+                        logger.info("[RetryAll] Track %d MediaFileExists: %s", track_index, e.media_path)
+                        track.stage = DownloadStage.DONE
+                        track.file_path = str(e.media_path)
+                        try:
+                            _td = self._job_temp_dirs.get(job_id)
+                            if _td:
+                                track.relative_path = str(Path(e.media_path).resolve().relative_to(Path(_td).resolve()))
+                        except ValueError:
+                            pass
                         break
                     except (GamdlError, Exception) as e:
                         error_msg = str(e)
@@ -1564,25 +1716,34 @@ class DownloadManager:
         await self._broadcast({"type": "job_update", "data": job.model_dump()})
 
 def check_semaphore_health() -> None:
-    """Watchdog: force-cancel any download job that has been holding a
-    semaphore slot for longer than _MAX_JOB_HOLD_TIME.
+    """Watchdog: force-cancel any download job that has been inactive/stalled
+    with zero track activity for longer than _MAX_JOB_IDLE_TIME (5 minutes).
 
     Called every 60 seconds from the periodic cleanup loop in main.py.
-    This is a safety net — with the WARP keepalive and connectivity probe,
-    this should rarely (if ever) trigger.
+    Active downloads completing tracks will never be prematurely cancelled.
     """
-    now = time.time()
-    stuck_jobs = [
-        (job_id, acquire_time)
-        for job_id, acquire_time in _active_jobs.items()
-        if now - acquire_time > _MAX_JOB_HOLD_TIME
-    ]
+    from . import api_routes
 
-    for job_id, acquire_time in stuck_jobs:
-        held_for = int(now - acquire_time)
+    now = time.time()
+    stuck_jobs = []
+
+    for job_id, acquire_time in list(_active_jobs.items()):
+        # Look up job's last_active_time from user managers
+        last_active = acquire_time
+        for dm in api_routes._user_managers.values():
+            job = dm.jobs.get(job_id)
+            if job and job.last_active_time:
+                last_active = max(last_active, job.last_active_time)
+                break
+
+        idle_seconds = now - last_active
+        if idle_seconds > _MAX_JOB_IDLE_TIME:
+            stuck_jobs.append((job_id, idle_seconds))
+
+    for job_id, idle_seconds in stuck_jobs:
         logger.error(
-            "Watchdog: force-cancelling zombie job %s (held semaphore for %ds)",
-            job_id, held_for,
+            "Watchdog: force-cancelling zombie job %s (idle with zero activity for %ds)",
+            job_id, int(idle_seconds),
         )
 
         # Find the asyncio Task for this job across all user managers

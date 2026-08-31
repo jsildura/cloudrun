@@ -66,6 +66,7 @@ class DownloadJob(BaseModel):
     animated_artwork_paths: list[str] = []
     animated_artwork_urls: list[str] = []
     selected_tracks: list[int] | None = None
+    last_active_time: float | None = None
 
 
 # ── Preview ──────────────────────────────────────────────────────────────────
