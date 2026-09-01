@@ -2,7 +2,7 @@ from pathlib import Path
 
 from ..interface.enums import MusicVideoCodec, MusicVideoResolution
 from ..interface.interface_music_video import AppleMusicMusicVideoInterface
-from ..interface.types import DecryptionKeyAv
+from ..interface.types import DecryptionKeyAv, StreamInfoAv
 from ..utils import async_subprocess
 from .constants import PLAYLIST_MEDIA_TYPE
 from .downloader_base import AppleMusicBaseDownloader
