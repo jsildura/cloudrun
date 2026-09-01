@@ -17,9 +17,10 @@ export async function onRequest(context) {
         return new Response(null, {
             status: 204,
             headers: {
-                'Access-Control-Allow-Origin': url.origin,
-                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, HEAD',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, Range, X-Requested-With',
+                'Access-Control-Expose-Headers': 'Content-Disposition, Content-Length, Content-Type, Accept-Ranges',
                 'Access-Control-Max-Age': '86400',
             },
         });
@@ -55,9 +56,10 @@ export async function onRequest(context) {
 
         // Clone response and add CORS headers for the frontend
         const proxyResponse = new Response(response.body, response);
-        proxyResponse.headers.set('Access-Control-Allow-Origin', url.origin);
+        const originHeader = request.headers.get('Origin') || '*';
+        proxyResponse.headers.set('Access-Control-Allow-Origin', originHeader);
         proxyResponse.headers.set('Access-Control-Allow-Credentials', 'true');
-        proxyResponse.headers.set('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type');
+        proxyResponse.headers.set('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Accept-Ranges');
         return proxyResponse;
     } catch (err) {
         return new Response(

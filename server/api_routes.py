@@ -443,7 +443,7 @@ async def cleanup_job(job_id: str, request: Request) -> dict:
     return {"status": "cleaned", "job_id": job_id}
 
 
-@router.get("/download/latest")
+@router.api_route("/download/latest", methods=["GET", "HEAD"])
 async def get_latest_download(request: Request) -> dict:
     """Get metadata about the single most recent completed download file.
     Not locked to any IP address. Supports Bearer header, ?token= param, or active session.
@@ -483,10 +483,10 @@ async def get_latest_download(request: Request) -> dict:
     }
 
 
-@router.get("/download/latest/file")
+@router.api_route("/download/latest/file", methods=["GET", "HEAD"])
 async def get_latest_download_file(request: Request):
     """Directly download the single most recent completed download file.
-    Not locked to any IP address. Works on any device, network, or external download manager.
+    Not locked to any IP address. Supports remote uploads, cloud transfers, range requests, and HEAD probes.
     """
     _check_rate_limit(request)
     try:
@@ -522,6 +522,11 @@ async def get_latest_download_file(request: Request):
             filename=filename,
             media_type=media_type,
             content_disposition_type="attachment",
+            method=request.method,
+            headers={
+                "Accept-Ranges": "bytes",
+                "Access-Control-Expose-Headers": "Content-Disposition, Content-Length, Content-Type, Accept-Ranges",
+            },
         )
     except HTTPException:
         raise

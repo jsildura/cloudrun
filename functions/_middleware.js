@@ -45,15 +45,9 @@ export async function onRequest(context) {
         }
     }
 
-    // 4. Deny API requests with 401 JSON immediately
+    // 4. Pass through all /api/ requests (authenticated via token and backend)
     if (url.pathname.startsWith('/api/')) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-            status: 401,
-            headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            }
-        });
+        return next();
     }
 
     // 5. Serve the Custom Login Page

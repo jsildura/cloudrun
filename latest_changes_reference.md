@@ -584,3 +584,8 @@ Systematically resolved, tested, and verified all 68 documented findings across 
 - **Root cause:** `do_wrapper_restart` previously waited a static 3 seconds before performing a single `urllib.request` probe. On cloud environments (such as EC2), booting the QEMU/ARM64 Android rootfs takes 4 to 5 seconds to bind to ports 10020 and 30020, causing a transient `[Errno 111] Connection refused` toast error even though the process was in the middle of successful startup.
 - **Fix:** Replaced static 3-second sleep with a non-blocking 10-second readiness polling loop calling `check_wrapper_healthy()` every 500ms, returning as soon as both HTTP and TCP decrypt ports respond.
 - **Files modified:** `server/api_routes.py`, `latest_changes_reference.md`
+
+### 8. Fix: Remote Upload & Cloud Transfer Compatibility for Direct Links
+- **Middleware Pass-through (`functions/_middleware.js`):** Allowed `/api/*` requests to pass through to `functions/api/[[path]].js` without requiring the browser `gamdl_auth` cookie, enabling remote transfer services (e.g. Google Drive remote upload, debrid, seedboxes) from any IP to access the endpoint.
+- **HTTP HEAD & Range Requests (`server/api_routes.py`, `functions/api/[[path]].js`, `src/worker.js`):** Enabled `HEAD` method support on `/api/download/latest/file` for file probing, passed `Accept-Ranges: bytes` header, and exposed CORS headers across edge proxy workers.
+- **Files modified:** `functions/_middleware.js`, `functions/api/[[path]].js`, `src/worker.js`, `server/api_routes.py`, `latest_changes_reference.md`
