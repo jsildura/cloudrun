@@ -15,6 +15,7 @@ import psutil
 psutil.cpu_percent()  # warm-up: first call always returns 0, prime for next calls
 from dataclasses import asdict
 import os
+import sys
 import uuid
 from pathlib import Path
 
@@ -575,9 +576,35 @@ def do_wrapper_restart() -> dict:
     try:
         req = urllib.request.Request(url, method="GET")
         urllib.request.urlopen(req, timeout=3)
-        return {"success": True, "message": "Wrapper restarted successfully"}
     except Exception:
         return {"success": False, "message": "Wrapper successfully started, please refresh the page"}
+
+
+def check_wrapper_healthy() -> bool:
+    """Check if the Wrapper service is reachable on account URL and decrypt port 10020 is responsive."""
+    import socket
+    import urllib.request
+    import urllib.error
+
+    cfg = _get_current_config()
+    # 1. Test HTTP port (30020)
+    try:
+        req = urllib.request.Request(cfg.wrapper_account_url, method="GET")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            if resp.status != 200:
+                return False
+    except Exception:
+        return False
+
+    # 2. Test TCP Decrypt port (10020)
+    try:
+        host, port_str = cfg.wrapper_decrypt_ip.split(":")
+        with socket.create_connection((host, int(port_str)), timeout=3):
+            pass
+    except Exception:
+        return False
+
+    return True
 
 
 @router.get("/wrapper/status")
