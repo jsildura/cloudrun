@@ -514,10 +514,15 @@ async def get_latest_download_file(request: Request):
 
     file_path = latest["file_path"]
     filename = latest["filename"]
+    media_type = "application/zip" if filename.lower().endswith(".zip") else "application/octet-stream"
     return FileResponse(
         path=file_path,
         filename=filename,
-        media_type="application/octet-stream",
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition, Content-Length, Content-Type",
+        },
     )
 
 

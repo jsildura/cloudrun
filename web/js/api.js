@@ -146,7 +146,7 @@ class GamdlApi {
         }
     }
 
-    async downloadLatestFile() {
+    async downloadLatestFile(fallbackFilename) {
         const headers = {};
         const token = (typeof AuthStorage !== 'undefined' && typeof AuthStorage.getToken === 'function')
             ? AuthStorage.getToken()
@@ -157,10 +157,17 @@ class GamdlApi {
             : `${this.baseUrl}/api/download/latest/file`;
         const res = await fetch(url, { headers });
         if (!res.ok) throw new Error('File no longer available on server');
+
+        let filename = fallbackFilename || 'download.zip';
         const disposition = res.headers.get('content-disposition');
-        let filename = 'download';
-        if (disposition && disposition.includes('filename=')) {
-            filename = disposition.split('filename=')[1].replace(/["']/g, '').trim();
+        if (disposition && disposition.includes('filename')) {
+            const matchUtf8 = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+            const matchStandard = disposition.match(/filename="?([^";]+)"?/i);
+            if (matchUtf8 && matchUtf8[1]) {
+                filename = decodeURIComponent(matchUtf8[1].trim());
+            } else if (matchStandard && matchStandard[1]) {
+                filename = matchStandard[1].trim();
+            }
         }
         const blob = await res.blob();
         return { blob, filename };

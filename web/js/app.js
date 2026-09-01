@@ -949,9 +949,11 @@
                 if (spanEl) spanEl.textContent = '…';
                 try {
                     toast('Starting direct download…', 'info');
-                    const { blob, filename } = await api.downloadLatestFile();
-                    triggerSave(blob, filename);
-                    toast(`Saved ${filename}`, 'success');
+                    const targetFilename = _latestDownloadInfo?.filename || 'download.zip';
+                    const { blob, filename } = await api.downloadLatestFile(targetFilename);
+                    const finalSaveName = filename || targetFilename;
+                    triggerSave(blob, finalSaveName);
+                    toast(`Saved ${finalSaveName}`, 'success');
                 } catch (err) {
                     toast(err.message || 'Direct download failed', 'error');
                 } finally {

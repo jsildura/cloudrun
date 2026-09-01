@@ -590,71 +590,80 @@ class DownloadManager:
                 g = match.groupdict()
                 url_type = g.get("type") or g.get("library_type") or "song"
 
-        # Determine if single file or multi-track zip
-        if len(done_tracks) == 1 and url_type in ("song", "music-video", "post"):
-            src_path = Path(first_track.file_path)
-            dest_filename = src_path.name
-            dest_path = latest_dir / dest_filename
-            try:
-                shutil.copy2(src_path, dest_path)
-                self._latest_download = {
-                    "job_id": job_id,
-                    "filename": dest_filename,
-                    "file_path": str(dest_path),
-                    "title": title,
-                    "artist": artist,
-                    "type": url_type,
-                    "size": dest_path.stat().st_size,
-                    "timestamp": time.time(),
-                }
-                logger.info("Retained single latest file: %s (%d bytes)", dest_path, self._latest_download["size"])
-            except Exception as e:
-                logger.error("Failed to retain single latest file: %s", e)
+        # Build clean filename matching the frontend template:
+        # e.g. "Eclipse - Delta Goodrem.zip" or "Eurovision 2026.zip"
+        if url_type in ("album", "albums"):
+            base_title = album if album else title
+            if artist and artist != "Unknown" and artist.lower() not in base_title.lower():
+                clean_name = f"{base_title} - {artist}"
+            else:
+                clean_name = base_title
+        elif url_type in ("playlist", "playlists"):
+            clean_name = title
         else:
-            # Multi-track or collection: create a ZIP bundle
-            clean_name = "".join(
-                c for c in (album if url_type in ("album", "albums") else title)
-                if c.isalnum() or c in (" ", "-", "_", ".")
-            ).strip()
-            if not clean_name:
-                clean_name = "Download"
-            dest_filename = f"{clean_name}.zip"
-            dest_path = latest_dir / dest_filename
+            if artist and artist != "Unknown" and artist.lower() not in title.lower():
+                clean_name = f"{title} - {artist}"
+            else:
+                clean_name = title or album or "Download"
 
-            try:
-                temp_dir = self._job_temp_dirs.get(job_id)
-                base_dir = Path(temp_dir) if temp_dir and Path(temp_dir).exists() else Path(first_track.file_path).parent
+        clean_name = "".join(
+            c for c in clean_name
+            if c.isalnum() or c in (" ", "-", "_", ".", "(", ")", "[", "]")
+        ).strip()
+        if not clean_name:
+            clean_name = "Download"
+        dest_filename = f"{clean_name}.zip"
+        dest_path = latest_dir / dest_filename
 
-                with zipfile.ZipFile(dest_path, "w", zipfile.ZIP_STORED) as zf:
-                    if base_dir.exists():
-                        for root, _, files in os.walk(base_dir):
-                            for file in files:
-                                file_p = Path(root) / file
-                                if file_p.exists() and file_p != dest_path:
-                                    try:
-                                        rel_p = file_p.relative_to(base_dir)
-                                        zf.write(file_p, arcname=str(rel_p))
-                                    except Exception:
+        try:
+            temp_dir = self._job_temp_dirs.get(job_id)
+            base_dir = Path(temp_dir) if temp_dir and Path(temp_dir).exists() else Path(first_track.file_path).parent
+
+            with zipfile.ZipFile(dest_path, "w", zipfile.ZIP_STORED) as zf:
+                added_paths = set()
+                if base_dir.exists():
+                    for root, _, files in os.walk(base_dir):
+                        for file in files:
+                            file_p = Path(root) / file
+                            if file_p.exists() and file_p != dest_path:
+                                try:
+                                    rel_p = str(file_p.relative_to(base_dir)).replace("\\", "/")
+                                    if rel_p not in added_paths:
+                                        zf.write(file_p, arcname=rel_p)
+                                        added_paths.add(rel_p)
+                                except Exception:
+                                    if file_p.name not in added_paths:
                                         zf.write(file_p, arcname=file_p.name)
-                    else:
-                        for t in done_tracks:
-                            p = Path(t.file_path)
-                            if p.exists():
-                                zf.write(p, arcname=t.relative_path or p.name)
+                                        added_paths.add(file_p.name)
 
-                self._latest_download = {
-                    "job_id": job_id,
-                    "filename": dest_filename,
-                    "file_path": str(dest_path),
-                    "title": clean_name,
-                    "artist": artist,
-                    "type": url_type,
-                    "size": dest_path.stat().st_size,
-                    "timestamp": time.time(),
-                }
-                logger.info("Retained latest ZIP bundle: %s (%d bytes)", dest_path, self._latest_download["size"])
-            except Exception as e:
-                logger.error("Failed to create latest ZIP bundle: %s", e)
+                # Also check for individual done tracks not in base_dir
+                for t in done_tracks:
+                    p = Path(t.file_path)
+                    if p.exists():
+                        arc_name = (t.relative_path or p.name).replace("\\", "/")
+                        if arc_name not in added_paths:
+                            zf.write(p, arcname=arc_name)
+                            added_paths.add(arc_name)
+
+                # Check for animated artwork video in tempdir
+                for art_p in Path(tempfile.gettempdir()).glob(f"artwork_{job_id}*"):
+                    if art_p.is_file() and art_p.name not in added_paths:
+                        zf.write(art_p, arcname=art_p.name)
+                        added_paths.add(art_p.name)
+
+            self._latest_download = {
+                "job_id": job_id,
+                "filename": dest_filename,
+                "file_path": str(dest_path),
+                "title": clean_name,
+                "artist": artist,
+                "type": url_type,
+                "size": dest_path.stat().st_size,
+                "timestamp": time.time(),
+            }
+            logger.info("Retained latest ZIP bundle: %s (%d bytes)", dest_path, self._latest_download["size"])
+        except Exception as e:
+            logger.error("Failed to create latest ZIP bundle: %s", e)
 
     def get_latest_download(self) -> dict | None:
         """Get info about the most recent completed download file."""

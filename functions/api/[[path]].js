@@ -57,6 +57,7 @@ export async function onRequest(context) {
         const proxyResponse = new Response(response.body, response);
         proxyResponse.headers.set('Access-Control-Allow-Origin', url.origin);
         proxyResponse.headers.set('Access-Control-Allow-Credentials', 'true');
+        proxyResponse.headers.set('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type');
         return proxyResponse;
     } catch (err) {
         return new Response(
