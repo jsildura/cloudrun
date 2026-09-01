@@ -443,6 +443,46 @@ async def cleanup_job(job_id: str, request: Request) -> dict:
     return {"status": "cleaned", "job_id": job_id}
 
 
+@router.get("/download/latest")
+async def get_latest_download(request: Request) -> dict:
+    """Get metadata about the single most recent completed download file."""
+    _check_rate_limit(request)
+    token = _extract_token(request)
+    dm = _get_user_dm(token)
+    latest = dm.get_latest_download()
+    if not latest or not os.path.isfile(latest.get("file_path", "")):
+        return {"available": False}
+    return {
+        "available": True,
+        "job_id": latest.get("job_id", ""),
+        "filename": latest.get("filename", ""),
+        "title": latest.get("title", ""),
+        "artist": latest.get("artist", ""),
+        "type": latest.get("type", ""),
+        "size": latest.get("size", 0),
+        "timestamp": latest.get("timestamp", 0),
+    }
+
+
+@router.get("/download/latest/file")
+async def get_latest_download_file(request: Request):
+    """Directly download the single most recent completed download file."""
+    _check_rate_limit(request)
+    token = _extract_token(request)
+    dm = _get_user_dm(token)
+    latest = dm.get_latest_download()
+    if not latest or not os.path.isfile(latest.get("file_path", "")):
+        raise HTTPException(status_code=404, detail="No recent download file available")
+
+    file_path = latest["file_path"]
+    filename = latest["filename"]
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/octet-stream",
+    )
+
+
 async def run_periodic_cleanup() -> None:
     """Proactive cleanup: evict stale jobs and user managers.
 

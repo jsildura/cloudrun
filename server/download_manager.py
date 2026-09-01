@@ -5,6 +5,7 @@ with real-time progress tracking via SSE broadcast.
 """
 
 import asyncio
+import hashlib
 import logging
 import os
 import shutil
@@ -12,6 +13,7 @@ import tempfile
 import time
 import traceback
 import uuid
+import zipfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -93,14 +95,20 @@ class DownloadManager:
         self._preview_cache: dict[str, tuple[float, PreviewResponse]] = {}
         self.PREVIEW_CACHE_TTL = 600  # 10 minutes
         self._job_download_queues: dict[str, list] = {}  # job_id -> cached download queue
+        self._latest_download: dict | None = None  # info about single most recent completed download
+        self._token_hash: str = "default"
 
     def set_storage(self, storage) -> None:
         """Set the CloudStorage instance for R2 uploads."""
         self._storage = storage
 
     def set_token(self, token: str) -> None:
-        """Set the current user's raw token (used for R2 object key prefix)."""
+        """Set the current user's raw token (used for R2 object key prefix and latest download)."""
         self._current_token = token
+        if token:
+            self._token_hash = hashlib.sha256(token.encode()).hexdigest()[:16]
+        else:
+            self._token_hash = "default"
 
     @property
     def is_authenticated(self) -> bool:
@@ -539,6 +547,125 @@ class DownloadManager:
             self._job_finish_times.pop(jid, None)
             logger.info("Evicted stale job %s", jid)
 
+    def _clear_previous_latest_file(self) -> None:
+        """Remove previously retained latest download file from disk."""
+        token_h = getattr(self, "_token_hash", "default")
+        latest_dir = Path(tempfile.gettempdir()) / f"gamdl_latest_{token_h}"
+        if latest_dir.exists():
+            try:
+                shutil.rmtree(latest_dir, ignore_errors=True)
+                logger.info("Cleaned up previous latest download dir: %s", latest_dir)
+            except Exception as e:
+                logger.warning("Failed to clean latest download dir %s: %s", latest_dir, e)
+        self._latest_download = None
+
+    def _save_latest_completed_file(self, job_id: str, config: ServerConfig, url: str) -> None:
+        """Package and retain the single most recent completed download file on the server."""
+        job = self.jobs.get(job_id)
+        if not job or not job.tracks:
+            return
+
+        done_tracks = [
+            t for t in job.tracks
+            if t.stage == DownloadStage.DONE and t.file_path and Path(t.file_path).exists()
+        ]
+        if not done_tracks:
+            return
+
+        self._clear_previous_latest_file()
+
+        token_h = getattr(self, "_token_hash", "default")
+        latest_dir = Path(tempfile.gettempdir()) / f"gamdl_latest_{token_h}"
+        latest_dir.mkdir(parents=True, exist_ok=True)
+
+        first_track = done_tracks[0]
+        title = first_track.title or "Audio"
+        artist = first_track.artist or "Unknown"
+        album = first_track.album or title
+
+        url_type = "song"
+        if url:
+            match = VALID_URL_PATTERN.match(url)
+            if match:
+                g = match.groupdict()
+                url_type = g.get("type") or g.get("library_type") or "song"
+
+        # Determine if single file or multi-track zip
+        if len(done_tracks) == 1 and url_type in ("song", "music-video", "post"):
+            src_path = Path(first_track.file_path)
+            dest_filename = src_path.name
+            dest_path = latest_dir / dest_filename
+            try:
+                shutil.copy2(src_path, dest_path)
+                self._latest_download = {
+                    "job_id": job_id,
+                    "filename": dest_filename,
+                    "file_path": str(dest_path),
+                    "title": title,
+                    "artist": artist,
+                    "type": url_type,
+                    "size": dest_path.stat().st_size,
+                    "timestamp": time.time(),
+                }
+                logger.info("Retained single latest file: %s (%d bytes)", dest_path, self._latest_download["size"])
+            except Exception as e:
+                logger.error("Failed to retain single latest file: %s", e)
+        else:
+            # Multi-track or collection: create a ZIP bundle
+            clean_name = "".join(
+                c for c in (album if url_type in ("album", "albums") else title)
+                if c.isalnum() or c in (" ", "-", "_", ".")
+            ).strip()
+            if not clean_name:
+                clean_name = "Download"
+            dest_filename = f"{clean_name}.zip"
+            dest_path = latest_dir / dest_filename
+
+            try:
+                temp_dir = self._job_temp_dirs.get(job_id)
+                base_dir = Path(temp_dir) if temp_dir and Path(temp_dir).exists() else Path(first_track.file_path).parent
+
+                with zipfile.ZipFile(dest_path, "w", zipfile.ZIP_STORED) as zf:
+                    if base_dir.exists():
+                        for root, _, files in os.walk(base_dir):
+                            for file in files:
+                                file_p = Path(root) / file
+                                if file_p.exists() and file_p != dest_path:
+                                    try:
+                                        rel_p = file_p.relative_to(base_dir)
+                                        zf.write(file_p, arcname=str(rel_p))
+                                    except Exception:
+                                        zf.write(file_p, arcname=file_p.name)
+                    else:
+                        for t in done_tracks:
+                            p = Path(t.file_path)
+                            if p.exists():
+                                zf.write(p, arcname=t.relative_path or p.name)
+
+                self._latest_download = {
+                    "job_id": job_id,
+                    "filename": dest_filename,
+                    "file_path": str(dest_path),
+                    "title": clean_name,
+                    "artist": artist,
+                    "type": url_type,
+                    "size": dest_path.stat().st_size,
+                    "timestamp": time.time(),
+                }
+                logger.info("Retained latest ZIP bundle: %s (%d bytes)", dest_path, self._latest_download["size"])
+            except Exception as e:
+                logger.error("Failed to create latest ZIP bundle: %s", e)
+
+    def get_latest_download(self) -> dict | None:
+        """Get info about the most recent completed download file."""
+        if not self._latest_download:
+            return None
+        p = self._latest_download.get("file_path")
+        if not p or not os.path.isfile(p):
+            self._latest_download = None
+            return None
+        return self._latest_download
+
     @classmethod
     def _emergency_cleanup_tmp(cls) -> None:
         """Emergency cleanup: remove orphaned gamdl temp directories older than 2 minutes in temp dir."""
@@ -567,6 +694,9 @@ class DownloadManager:
         try:
             for item in Path(temp_dir).glob("gamdl_*"):
                 try:
+                    # Preserve deterministic cache directories and latest download bundles
+                    if item.name.startswith("gamdl_cache_") or item.name.startswith("gamdl_latest_"):
+                        continue
                     if os.path.abspath(str(item)) in active_dirs:
                         continue
                     if item.is_dir() and (now - item.stat().st_mtime > 120):
@@ -613,6 +743,9 @@ class DownloadManager:
                 f"Server disk space is critically low ({free_mb} MB available, 1024 MB required). "
                 "An emergency cleanup pass was executed. Please wait for active downloads to finish and try again."
             )
+
+        # Purge previous latest download file when a new download begins
+        self._clear_previous_latest_file()
 
         job_id = str(uuid.uuid4())[:8]
         job = DownloadJob(
@@ -1086,6 +1219,11 @@ class DownloadManager:
                     job.stage = DownloadStage.DONE
                     if has_errors:
                         job.error_message = "Completed with errors"
+                    else:
+                        try:
+                            self._save_latest_completed_file(job_id, config, url)
+                        except Exception as e:
+                            logger.warning(f"Failed to package latest download file for job {job_id}: {e}")
             await self._broadcast_job(job)
 
             # Non-cloud mode: schedule cleanup after 15 minutes

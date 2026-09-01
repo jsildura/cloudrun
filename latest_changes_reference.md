@@ -572,3 +572,10 @@ Systematically resolved, tested, and verified all 68 documented findings across 
 - **Fix:** Installed `git-lfs` on the EC2 host and ran `git lfs pull`, syncing the complete 253MB binary rootfs into the container with recursive `chmod +x` permissions.
 - **Healthcheck:** Updated `check_wrapper_healthy` in `server/api_routes.py` to recognize HTTP responses on port 30020 as active/healthy (preventing false offline statuses on non-200 responses) and verified ports 10020 and 30020 are live.
 - **Files modified:** `server/api_routes.py`, `gamdl/api/apple_music_api.py`, `latest_changes_reference.md`
+
+### 6. Feature: Direct Re-Download for Latest History Item (Single-File Server Retention)
+- **Single-File Retention (`server/download_manager.py`):** When a download completes (single track or album/playlist ZIP), the finished bundle is retained in a dedicated per-user directory `/tmp/gamdl_latest_<token>/`. Any previously retained file is automatically purged so only 1 file is kept on the server.
+- **Resumption Safety:** Does not alter `gamdl_cache_*` deterministic collection directories, preserving resumed track recovery for cancelled/retried downloads.
+- **REST Endpoints (`server/api_routes.py`):** Added `GET /api/download/latest` for metadata check and `GET /api/download/latest/file` for direct file delivery.
+- **Frontend Integration (`web/js/api.js`, `web/js/app.js`, `web/css/style.css`):** Attaches a direct Download button (`.btn-history-download`) strictly to the topmost (very first) item in **Recent Downloads**. When a new download starts, the direct download button is automatically detached from the previous item and attached to the new download once complete.
+- **Files modified:** `server/download_manager.py`, `server/api_routes.py`, `web/js/api.js`, `web/js/app.js`, `web/css/style.css`, `latest_changes_reference.md`

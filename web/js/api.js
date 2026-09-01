@@ -136,6 +136,31 @@ class GamdlApi {
         return `${this.baseUrl}/api/files/${encodeURIComponent(filePath)}`;
     }
 
+    // ── Latest Download ───────────────────────────────────────────────────
+
+    async getLatestDownload() {
+        try {
+            return await this._fetch('/api/download/latest');
+        } catch {
+            return { available: false };
+        }
+    }
+
+    async downloadLatestFile() {
+        const headers = {};
+        const token = AuthStorage.get();
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`${this.baseUrl}/api/download/latest/file`, { headers });
+        if (!res.ok) throw new Error('File no longer available on server');
+        const disposition = res.headers.get('content-disposition');
+        let filename = 'download';
+        if (disposition && disposition.includes('filename=')) {
+            filename = disposition.split('filename=')[1].replace(/["']/g, '').trim();
+        }
+        const blob = await res.blob();
+        return { blob, filename };
+    }
+
     // ── System Stats ──────────────────────────────────────────────────────
 
     async getSystemStats() {

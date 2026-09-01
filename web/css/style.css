@@ -2443,6 +2443,45 @@ a:hover {
     color: #ff375f;
 }
 
+.history-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.btn-history-download {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: rgba(255, 43, 92, 0.12);
+    border: 1px solid rgba(255, 43, 92, 0.35);
+    border-radius: var(--radius-sm);
+    color: #ff375f;
+    font-size: 0.68rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+
+.btn-history-download:hover {
+    background: #ff375f;
+    color: #fff;
+    border-color: #ff375f;
+    box-shadow: 0 0 8px rgba(255, 43, 92, 0.4);
+}
+
+.btn-history-download:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-history-download.loading svg {
+    animation: spin 1s linear infinite;
+}
+
 .history-item-date {
     font-size: 0.65rem;
     color: var(--text-muted);

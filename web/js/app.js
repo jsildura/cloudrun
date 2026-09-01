@@ -883,16 +883,44 @@
         return map[codec] || codec || 'Unknown';
     }
 
+    let _latestDownloadInfo = null;
+    let _currentHistoryItems = [];
+
+    async function refreshLatestDownloadInfo() {
+        try {
+            _latestDownloadInfo = await api.getLatestDownload();
+            if (_currentHistoryItems && _currentHistoryItems.length > 0) {
+                renderHistoryList(_currentHistoryItems);
+            }
+        } catch {
+            _latestDownloadInfo = null;
+        }
+    }
+
     /**
      * Render the download history list in the UI.
      */
     function renderHistoryList(items) {
         if (!historyList) return;
+        _currentHistoryItems = items || [];
         if (!items || items.length === 0) {
             historyList.innerHTML = '<p class="history-empty">No downloads yet.</p>';
             return;
         }
-        historyList.innerHTML = items.map(item => `
+        historyList.innerHTML = items.map((item, idx) => {
+            const hasLatestDirectDownload = (idx === 0) && _latestDownloadInfo && _latestDownloadInfo.available;
+            const downloadBtnHtml = hasLatestDirectDownload ? `
+                <button type="button" class="btn-history-download" id="btn-download-latest-history" title="Download ${escapeHtml(_latestDownloadInfo.filename || item.title)}">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>Download</span>
+                </button>
+            ` : '';
+
+            return `
             <div class="history-item">
                 <div class="history-item-info">
                     <span class="history-item-title">${escapeHtml(item.title)}</span>
@@ -902,9 +930,37 @@
                         <span class="history-badge codec-badge">${escapeHtml(item.codec)}</span>
                     </div>
                 </div>
-                <span class="history-item-date">${escapeHtml(item.date)}</span>
+                <div class="history-item-meta">
+                    ${downloadBtnHtml}
+                    <span class="history-item-date">${escapeHtml(item.date)}</span>
+                </div>
             </div>
-        `).join('');
+            `;
+        }).join('');
+
+        const btnDownloadLatest = $('#btn-download-latest-history');
+        if (btnDownloadLatest) {
+            btnDownloadLatest.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                btnDownloadLatest.disabled = true;
+                btnDownloadLatest.classList.add('loading');
+                const spanEl = btnDownloadLatest.querySelector('span');
+                const origText = spanEl ? spanEl.textContent : 'Download';
+                if (spanEl) spanEl.textContent = '…';
+                try {
+                    toast('Starting direct download…', 'info');
+                    const { blob, filename } = await api.downloadLatestFile();
+                    triggerSave(blob, filename);
+                    toast(`Saved ${filename}`, 'success');
+                } catch (err) {
+                    toast(err.message || 'Direct download failed', 'error');
+                } finally {
+                    btnDownloadLatest.disabled = false;
+                    btnDownloadLatest.classList.remove('loading');
+                    if (spanEl) spanEl.textContent = origText;
+                }
+            });
+        }
     }
 
     /**
@@ -1242,9 +1298,12 @@
                 date: new Date().toLocaleDateString() + ' ' +
                     new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             };
-            addDownloadHistory(historyItem).catch(err =>
+            addDownloadHistory(historyItem).then(() => {
+                setTimeout(() => refreshLatestDownloadInfo(), 1000);
+            }).catch(err =>
                 console.warn('[App] History save failed:', err)
             );
+            setTimeout(() => refreshLatestDownloadInfo(), 1500);
             incrementDownloadCount().catch(err =>
                 console.warn('[App] Stats update failed:', err)
             );
@@ -1984,6 +2043,12 @@
         if (btnPaste) btnPaste.disabled = true;
         setStatusText('Starting download...');
 
+        // Detach direct download link from previous download immediately
+        _latestDownloadInfo = null;
+        if (_currentHistoryItems && _currentHistoryItems.length > 0) {
+            renderHistoryList(_currentHistoryItems);
+        }
+
         try {
             const userCfg = loadLocalSettings();
             const job = await api.startDownload(_previewUrl, userCfg, _finalizedSelection);
@@ -2370,6 +2435,9 @@
 
         // Fetch system stats immediately
         fetchSystemStats();
+
+        // Check if there is a retained latest download available
+        refreshLatestDownloadInfo();
 
         // ── Firebase: Subscribe to download history & counter ──
         if (typeof subscribeToDownloadHistory === 'function') {
