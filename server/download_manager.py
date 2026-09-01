@@ -619,6 +619,50 @@ class DownloadManager:
             temp_dir = self._job_temp_dirs.get(job_id)
             base_dir = Path(temp_dir) if temp_dir and Path(temp_dir).exists() else Path(first_track.file_path).parent
 
+            # Collect all output files produced by this job
+            all_files = []
+            if base_dir.exists():
+                for root, _, files in os.walk(base_dir):
+                    for file in files:
+                        file_p = Path(root) / file
+                        if file_p.is_file() and not file_p.name.endswith(".tmp") and file_p != dest_path:
+                            all_files.append(file_p)
+            else:
+                for t in done_tracks:
+                    if t.file_path and Path(t.file_path).is_file():
+                        all_files.append(Path(t.file_path))
+
+            # Check for animated artwork video in tempdir
+            for art_p in Path(tempfile.gettempdir()).glob(f"artwork_{job_id}*"):
+                if art_p.is_file() and art_p not in all_files:
+                    all_files.append(art_p)
+
+            # Check if single track with NO companion files (no cover, no lyrics, no extra files)
+            is_single_track = (len(done_tracks) == 1 and url_type in ("song", "music-video", "post"))
+            has_companion_files = len(all_files) > 1 or any(
+                f.suffix.lower() in (".lrc", ".ttml", ".jpg", ".jpeg", ".png", ".webp") or f.name.startswith("artwork_")
+                for f in all_files
+            )
+
+            if is_single_track and not has_companion_files and all_files:
+                # Standalone single track with no companion files — do NOT zip
+                src_file = all_files[0]
+                dest_filename = src_file.name
+                dest_path = latest_dir / dest_filename
+                shutil.copy2(src_file, dest_path)
+                self._latest_download = {
+                    "job_id": job_id,
+                    "filename": dest_filename,
+                    "file_path": str(dest_path),
+                    "title": title,
+                    "artist": artist,
+                    "type": url_type,
+                    "size": dest_path.stat().st_size,
+                    "timestamp": time.time(),
+                }
+                logger.info("Retained unzipped single track: %s (%d bytes)", dest_path, self._latest_download["size"])
+                return
+
             with zipfile.ZipFile(dest_path, "w", zipfile.ZIP_STORED) as zf:
                 added_paths = set()
                 if base_dir.exists():

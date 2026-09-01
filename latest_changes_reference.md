@@ -574,10 +574,13 @@ Systematically resolved, tested, and verified all 68 documented findings across 
 - **Files modified:** `server/api_routes.py`, `gamdl/api/apple_music_api.py`, `latest_changes_reference.md`
 
 ### 6. Feature: Direct Re-Download for Latest History Item (Single-File Server Retention)
-- **Complete ZIP Packaging (`server/download_manager.py`):** When a download completes (single track or album/playlist), the complete bundle containing audio media, high-resolution artwork, synced lyrics, and animated artwork is retained in a dedicated per-user directory `/tmp/gamdl_latest_<token>/` matching the frontend template filename (e.g. `Eclipse - Delta Goodrem.zip`). Any previously retained file is automatically purged so only 1 file is kept on the server.
+- **Smart Container Retention (`server/download_manager.py`):** When a download completes:
+  - **Standalone Single Track (No companion files):** If a single track is downloaded without save-cover or save-lyrics enabled, it is retained directly uncompressed (e.g. `Bangaranga.m4a`) rather than being packaged in a `.zip`.
+  - **Multi-File Bundle:** If companion files (cover artwork, synced `.lrc`/`.ttml` lyrics, animated artwork video) are present or if multiple tracks are downloaded (album / playlist), the complete bundle is archived into a `.zip` matching the frontend template filename (e.g. `Eclipse - Delta Goodrem.zip`).
+  - **Single-File Limit:** Any previously retained file is automatically purged so only 1 file is kept on the server.
 - **Resumption Safety:** Does not alter `gamdl_cache_*` deterministic collection directories, preserving resumed track recovery for cancelled/retried downloads.
-- **REST Endpoints & Headers (`server/api_routes.py`, `functions/api/[[path]].js`, `src/worker.js`):** Added `GET /api/download/latest` and `GET /api/download/latest/file` with `Content-Disposition`, `application/zip` MIME type, and `Access-Control-Expose-Headers` for edge proxies.
-- **Frontend Integration (`web/js/api.js`, `web/js/app.js`, `web/css/style.css`):** Attaches a genuine `<a href="..." class="btn-history-direct-link">` anchor tag and companion copy button (`.btn-history-copy-link`) strictly to the topmost (very first) item in **Recent Downloads**. Exposes the actual direct file URL in browser previews, allows direct native browser downloads / Right Click -> "Copy link address", and one-click clipboard copying.
+- **REST Endpoints & Headers (`server/api_routes.py`, `functions/api/[[path]].js`, `src/worker.js`):** Added `GET/HEAD /api/download/latest` and `GET/HEAD /api/download/latest/file` with `Content-Disposition`, accurate MIME types (`application/zip`, `audio/mp4`, `video/mp4`, `audio/flac`), `Accept-Ranges: bytes`, and `Access-Control-Expose-Headers` for edge proxies.
+- **Frontend Integration (`web/js/api.js`, `web/js/app.js`, `web/css/style.css`):** Attaches a sleek `Copy Link` button (`.btn-history-copy-link`) strictly to the topmost (very first) item in **Recent Downloads** for one-click clipboard copying.
 - **Files modified:** `server/download_manager.py`, `server/api_routes.py`, `web/js/api.js`, `web/js/app.js`, `web/css/style.css`, `functions/api/[[path]].js`, `src/worker.js`, `latest_changes_reference.md`
 
 ### 7. Fix: Wrapper Restart Healthcheck Readiness Polling

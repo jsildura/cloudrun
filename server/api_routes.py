@@ -515,7 +515,17 @@ async def get_latest_download_file(request: Request):
 
         file_path = latest["file_path"]
         filename = latest["filename"]
-        media_type = "application/zip" if filename.lower().endswith(".zip") else "application/octet-stream"
+        ext = os.path.splitext(filename)[1].lower()
+        if ext == ".zip":
+            media_type = "application/zip"
+        elif ext in (".m4a", ".aac"):
+            media_type = "audio/mp4"
+        elif ext in (".m4v", ".mp4"):
+            media_type = "video/mp4"
+        elif ext in (".flac",):
+            media_type = "audio/flac"
+        else:
+            media_type = "application/octet-stream"
 
         return FileResponse(
             path=file_path,
