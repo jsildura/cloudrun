@@ -38,6 +38,7 @@
         if (!window.db) return;
         try {
             const user = await getCurrentUser();
+            if (!user) return;
             await window.db.collection(COLLECTION_NAME).add({
                 ...item,
                 user_id: user.uid,
@@ -63,6 +64,7 @@
 
         getCurrentUser()
             .then((user) => {
+                if (!user) return;
                 unsubscribe = window.db
                     .collection(COLLECTION_NAME)
                     .where('user_id', '==', user.uid)
@@ -97,6 +99,7 @@
         if (!window.db) return;
         try {
             const user = await getCurrentUser();
+            if (!user) return;
             const snapshot = await window.db
                 .collection(COLLECTION_NAME)
                 .where('user_id', '==', user.uid)

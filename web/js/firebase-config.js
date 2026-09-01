@@ -37,15 +37,32 @@
     // every download-history document to its owner. Sign in once at startup and
     // expose a promise that resolves once the current user is available.
     window.firebaseAuthReady = new Promise((resolve) => {
-        firebase.auth().onAuthStateChanged((user) => {
-            if (user) {
-                window.firebaseCurrentUser = user;
-                resolve(user);
-            } else {
-                firebase.auth().signInAnonymously().catch((err) => {
-                    console.error('[Firebase] Anonymous sign-in failed:', err);
-                });
+        let resolved = false;
+        const doResolve = (val) => {
+            if (!resolved) {
+                resolved = true;
+                resolve(val);
             }
-        });
+        };
+
+        try {
+            firebase.auth().onAuthStateChanged((user) => {
+                if (user) {
+                    window.firebaseCurrentUser = user;
+                    doResolve(user);
+                } else {
+                    firebase.auth().signInAnonymously().catch((err) => {
+                        console.warn('[Firebase] Anonymous sign-in note (enable Anonymous Auth provider in Firebase Console):', err.code || err.message);
+                        doResolve(null);
+                    });
+                }
+            });
+        } catch (e) {
+            console.warn('[Firebase] Auth initialization skipped:', e);
+            doResolve(null);
+        }
+
+        // Safety timeout so downstream promises never hang indefinitely
+        setTimeout(() => doResolve(null), 3000);
     });
 })();

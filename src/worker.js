@@ -42,14 +42,14 @@ export default {
 
             // Clone the incoming request, forwarding method, headers, and body
             const headers = new Headers(request.headers);
-            headers.set('Host', new URL(backendUrl).host);
-            // Remove cf-connecting-ip to avoid confusion on the backend
+            headers.delete('host');
             headers.delete('cf-connecting-ip');
 
+            const hasBody = !['GET', 'HEAD'].includes(request.method.toUpperCase());
             const proxyRequest = new Request(target.toString(), {
                 method: request.method,
                 headers,
-                body: request.body,
+                body: hasBody ? request.body : undefined,
                 redirect: 'follow',
             });
 
