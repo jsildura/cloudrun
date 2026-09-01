@@ -522,7 +522,6 @@ async def get_latest_download_file(request: Request):
             filename=filename,
             media_type=media_type,
             content_disposition_type="attachment",
-            method=request.method,
             headers={
                 "Accept-Ranges": "bytes",
                 "Access-Control-Expose-Headers": "Content-Disposition, Content-Length, Content-Type, Accept-Ranges",
