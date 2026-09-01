@@ -489,41 +489,45 @@ async def get_latest_download_file(request: Request):
     Not locked to any IP address. Works on any device, network, or external download manager.
     """
     _check_rate_limit(request)
-    auth = request.headers.get("Authorization", "")
-    token = ""
-    if auth.startswith("Bearer "):
-        token = auth.removeprefix("Bearer ").strip()
-    if not token:
-        token = request.query_params.get("token", "").strip()
+    try:
+        auth = request.headers.get("Authorization", "")
+        token = ""
+        if auth.startswith("Bearer "):
+            token = auth.removeprefix("Bearer ").strip()
+        if not token:
+            token = request.query_params.get("token", "").strip()
 
-    latest = None
-    if token:
-        dm = _get_user_dm(token)
-        latest = dm.get_latest_download()
+        latest = None
+        if token:
+            dm = _get_user_dm(token)
+            latest = dm.get_latest_download()
 
-    # Fallback to search across active managers if no token or not found
-    if not latest or not os.path.isfile(latest.get("file_path", "")):
-        for dm in _user_managers.values():
-            cand = dm.get_latest_download()
-            if cand and os.path.isfile(cand.get("file_path", "")):
-                latest = cand
-                break
+        # Fallback to search across active managers if no token or not found
+        if not latest or not os.path.isfile(latest.get("file_path", "")):
+            for dm in _user_managers.values():
+                cand = dm.get_latest_download()
+                if cand and os.path.isfile(cand.get("file_path", "")):
+                    latest = cand
+                    break
 
-    if not latest or not os.path.isfile(latest.get("file_path", "")):
-        raise HTTPException(status_code=404, detail="No recent download file available")
+        if not latest or not os.path.isfile(latest.get("file_path", "")):
+            raise HTTPException(status_code=404, detail="No recent download file available")
 
-    file_path = latest["file_path"]
-    filename = latest["filename"]
-    media_type = "application/zip" if filename.lower().endswith(".zip") else "application/octet-stream"
-    return FileResponse(
-        path=file_path,
-        filename=filename,
-        media_type=media_type,
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Access-Control-Expose-Headers": "Content-Disposition, Content-Length, Content-Type",
-        },
-    )
+        file_path = latest["file_path"]
+        filename = latest["filename"]
+        media_type = "application/zip" if filename.lower().endswith(".zip") else "application/octet-stream"
+
+        return FileResponse(
+            path=file_path,
+            filename=filename,
+            media_type=media_type,
+            content_disposition_type="attachment",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to serve latest download file: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to serve latest file: {e}")
 
 
 async def run_periodic_cleanup() -> None:
