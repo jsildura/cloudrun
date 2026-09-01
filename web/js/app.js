@@ -918,24 +918,15 @@
                 const directUrl = token
                     ? `${base}/api/download/latest/file?token=${encodeURIComponent(token)}`
                     : `${base}/api/download/latest/file`;
-                const filename = _latestDownloadInfo.filename || `${item.title}.zip`;
 
                 downloadLinkHtml = `
-                <div class="history-item-link-group">
-                    <a href="${directUrl}" download="${escapeHtml(filename)}" class="btn-history-direct-link" title="${escapeHtml(directUrl)}" target="_blank" rel="noopener noreferrer">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-                        </svg>
-                        <span>Direct Link</span>
-                    </a>
-                    <button type="button" class="btn-history-copy-link" id="btn-copy-latest-history-link" title="Copy direct download link" data-url="${escapeHtml(directUrl)}">
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                        </svg>
-                    </button>
-                </div>
+                <button type="button" class="btn-history-copy-link" id="btn-copy-latest-history-link" title="Copy direct download link" data-url="${escapeHtml(directUrl)}">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <span>Copy Link</span>
+                </button>
                 `;
             }
 
@@ -966,7 +957,14 @@
                 if (url) {
                     try {
                         await navigator.clipboard.writeText(url);
+                        const span = btnCopyLink.querySelector('span');
+                        if (span) span.textContent = 'Copied!';
+                        btnCopyLink.classList.add('copied');
                         toast('Direct link copied to clipboard!', 'success');
+                        setTimeout(() => {
+                            if (span) span.textContent = 'Copy Link';
+                            btnCopyLink.classList.remove('copied');
+                        }, 1500);
                     } catch {
                         toast('Failed to copy link', 'error');
                     }
