@@ -5,6 +5,7 @@ per-user DownloadManager instances keyed by hashed token,
 in-memory per-IP rate limiting.
 """
 
+import asyncio
 import hashlib
 import logging
 import time
