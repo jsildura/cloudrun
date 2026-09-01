@@ -219,7 +219,7 @@ if os.environ.get("CORS_ORIGINS"):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"https://.*\.(gamdl\.pages\.dev|workers\.dev|trycloudflare\.com|hf\.space|koyeb\.app)",
+    allow_origin_regex=r"^https://([a-zA-Z0-9-]+\.)*gamdl\.pages\.dev$|^https://([a-zA-Z0-9-]+\.)*stormygenesis\.workers\.dev$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -247,6 +247,12 @@ if _web_dir.exists():
         StaticFiles(directory=str(_web_dir / "js")),
         name="js",
     )
+
+
+@app.get("/health")
+@app.get("/api/health")
+async def health():
+    return {"status": "ok"}
 
 
 @app.get("/")

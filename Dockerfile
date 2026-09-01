@@ -51,9 +51,8 @@ ENV PORT=8000
 ENV CLOUD_MODE=true
 EXPOSE 8000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://localhost:'+os.environ.get('PORT','8000')+'/api/config')" || exit 1
+    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://localhost:'+os.environ.get('PORT','8000')+'/api/health')" || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["bash", "start.sh"]

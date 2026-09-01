@@ -17,18 +17,27 @@ class AppleMusicUploadedVideoInterface(AppleMusicInterface):
         self.__dict__.update(interface.__dict__)
 
     def get_stream_url_best(self, metadata: dict) -> str:
+        asset_tokens = metadata.get("attributes", {}).get("assetTokens", {})
         best_quality = next(
             (
                 quality
                 for quality in UPLOADED_VIDEO_QUALITY_RANK
-                if metadata["attributes"]["assetTokens"].get(quality)
+                if asset_tokens.get(quality)
             ),
             None,
         )
-        return metadata["attributes"]["assetTokens"][best_quality]
+        if not best_quality or best_quality not in asset_tokens:
+            if asset_tokens:
+                return next(iter(asset_tokens.values()))
+            raise ValueError("No video stream found for uploaded video")
+        return asset_tokens[best_quality]
 
     async def get_stream_url_from_user(self, metadata: dict) -> str:
-        qualities = list(metadata["attributes"]["assetTokens"].keys())
+        asset_tokens = metadata.get("attributes", {}).get("assetTokens", {})
+        if not asset_tokens:
+            raise ValueError("No video streams found for uploaded video")
+
+        qualities = list(asset_tokens.keys())
         choices = [
             Choice(
                 name=quality,
@@ -41,16 +50,17 @@ class AppleMusicUploadedVideoInterface(AppleMusicInterface):
             choices=choices,
         ).execute_async()
 
-        return metadata["attributes"]["assetTokens"][selected]
+        return asset_tokens[selected]
 
     async def get_stream_url(
         self, metadata: dict, quality: UploadedVideoQuality
     ) -> str:
         if quality == UploadedVideoQuality.BEST:
             stream_url = self.get_stream_url_best(metadata)
-
-        if quality == UploadedVideoQuality.ASK:
+        elif quality == UploadedVideoQuality.ASK:
             stream_url = await self.get_stream_url_from_user(metadata)
+        else:
+            stream_url = self.get_stream_url_best(metadata)
 
         logger.debug(f"Stream URL: {stream_url}")
 

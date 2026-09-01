@@ -172,7 +172,7 @@ class CliConfig:
             help=".wvd file path",
             default=base_downloader_sig.parameters["wvd_path"].default,
             type=click.Path(
-                file_okay=False,
+                file_okay=True,
                 dir_okay=True,
                 writable=True,
                 resolve_path=True,

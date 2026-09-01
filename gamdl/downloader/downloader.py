@@ -75,6 +75,15 @@ class AppleMusicDownloader:
             playlist_metadata,
         )
 
+    def _clean_gathered_items(self, items: list) -> list[DownloadItem]:
+        cleaned = []
+        for item in items:
+            if isinstance(item, Exception):
+                cleaned.append(DownloadItem(error=item))
+            elif item is not None:
+                cleaned.append(item)
+        return cleaned
+
     async def get_single_download_item_no_filter(
         self,
         media_metadata: dict,
@@ -84,33 +93,34 @@ class AppleMusicDownloader:
             if not self.base_downloader.is_media_streamable(
                 media_metadata,
             ):
-                raise NotStreamable(media_metadata["id"])
+                raise NotStreamable(media_metadata.get("id"))
 
-            if media_metadata["type"] in SONG_MEDIA_TYPE:
+            media_type = media_metadata.get("type")
+            if media_type in SONG_MEDIA_TYPE:
                 if not self.song_downloader:
-                    raise UnsupportedMediaType(media_metadata["type"])
+                    raise UnsupportedMediaType(media_type)
 
                 download_item = await self.song_downloader.get_download_item(
                     media_metadata,
                     playlist_metadata,
                 )
-
-            if media_metadata["type"] in MUSIC_VIDEO_MEDIA_TYPE:
+            elif media_type in MUSIC_VIDEO_MEDIA_TYPE:
                 if not self.music_video_downloader:
-                    raise UnsupportedMediaType(media_metadata["type"])
+                    raise UnsupportedMediaType(media_type)
 
                 download_item = await self.music_video_downloader.get_download_item(
                     media_metadata,
                     playlist_metadata,
                 )
-
-            if media_metadata["type"] in UPLOADED_VIDEO_MEDIA_TYPE:
+            elif media_type in UPLOADED_VIDEO_MEDIA_TYPE:
                 if not self.uploaded_video_downloader:
-                    raise UnsupportedMediaType(media_metadata["type"])
+                    raise UnsupportedMediaType(media_type)
 
                 download_item = await self.uploaded_video_downloader.get_download_item(
                     media_metadata,
                 )
+            else:
+                raise UnsupportedMediaType(media_type)
         except Exception as e:
             download_item = DownloadItem(
                 media_metadata=media_metadata,
@@ -143,7 +153,7 @@ class AppleMusicDownloader:
         ]
 
         download_items = await safe_gather(*tasks)
-        return download_items
+        return self._clean_gathered_items(download_items)
 
     async def get_artist_download_items(
         self,
@@ -242,7 +252,10 @@ class AppleMusicDownloader:
             self.interface.apple_music_api.get_album(album_metadata["id"])
             for album_metadata in selected
         ]
-        album_responses = await safe_gather(*album_tasks)
+        album_responses = [
+            resp for resp in await safe_gather(*album_tasks)
+            if not isinstance(resp, Exception) and resp and "data" in resp
+        ]
 
         track_tasks = [
             self.get_collection_download_items(album_response["data"][0])
@@ -251,9 +264,12 @@ class AppleMusicDownloader:
         track_results = await safe_gather(*track_tasks)
 
         for track_result in track_results:
-            download_items.extend(track_result)
+            if isinstance(track_result, list):
+                download_items.extend(track_result)
+            elif isinstance(track_result, Exception):
+                download_items.append(DownloadItem(error=track_result))
 
-        return download_items
+        return self._clean_gathered_items(download_items)
 
     async def get_artist_music_videos_download_items(
         self,
@@ -289,7 +305,7 @@ class AppleMusicDownloader:
         ]
         download_items = await safe_gather(*music_video_tasks)
 
-        return download_items
+        return self._clean_gathered_items(download_items)
 
     async def get_artist_songs_download_items(
         self,
@@ -323,7 +339,7 @@ class AppleMusicDownloader:
         ]
         download_items = await safe_gather(*song_tasks)
 
-        return download_items
+        return self._clean_gathered_items(download_items)
 
     def millis_to_min_sec(self, millis) -> str:
         minutes, seconds = divmod(millis // 1000, 60)

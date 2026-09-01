@@ -63,7 +63,7 @@ _waiting_jobs: list[tuple[str, object]] = []
 _MIN_FREE_DISK_BYTES = 1024 * 1024 * 1024  # 1 GB
 
 # How long to keep completed jobs in memory before eviction (safety net)
-_STALE_JOB_TTL = 300  # 5 minutes — primary cleanup is event-driven from frontend
+_STALE_JOB_TTL = 1800  # 30 minutes — primary cleanup is event-driven from frontend
 
 # Tracks which jobs currently hold a semaphore slot and their progress
 # Key = job_id, Value = timestamp when the slot was acquired
@@ -541,21 +541,42 @@ class DownloadManager:
 
     @classmethod
     def _emergency_cleanup_tmp(cls) -> None:
-        """Emergency cleanup: remove all gamdl temp directories older than 2 minutes in /tmp."""
-        logger.warning("Low disk space detected! Running emergency cleanup pass on /tmp...")
+        """Emergency cleanup: remove orphaned gamdl temp directories older than 2 minutes in temp dir."""
+        temp_dir = tempfile.gettempdir()
+        logger.warning("Low disk space detected! Running emergency cleanup pass on %s...", temp_dir)
         now = time.time()
+
+        # Collect temp directories belonging to active/in-flight jobs to prevent deleting them
+        active_dirs: set[str] = set()
         try:
-            for item in Path("/tmp").glob("gamdl_*"):
+            from . import api_routes
+            for dm in api_routes._user_managers.values():
+                for jid, j in dm.jobs.items():
+                    if j.stage in (
+                        DownloadStage.QUEUED,
+                        DownloadStage.PARSING,
+                        DownloadStage.PREPARING,
+                        DownloadStage.DOWNLOADING,
+                    ):
+                        td = dm._job_temp_dirs.get(jid)
+                        if td:
+                            active_dirs.add(os.path.abspath(td))
+        except Exception:
+            pass
+
+        try:
+            for item in Path(temp_dir).glob("gamdl_*"):
                 try:
-                    # Remove directories or files older than 2 minutes
+                    if os.path.abspath(str(item)) in active_dirs:
+                        continue
                     if item.is_dir() and (now - item.stat().st_mtime > 120):
                         shutil.rmtree(item, ignore_errors=True)
                     elif item.is_file() and (now - item.stat().st_mtime > 120):
                         item.unlink(missing_ok=True)
                 except Exception:
                     pass
-            # Also clean orphan artwork files in /tmp
-            for item in Path("/tmp").glob("artwork_*.mp4"):
+            # Also clean orphan artwork files
+            for item in Path(temp_dir).glob("artwork_*.mp4"):
                 try:
                     if item.is_file() and (now - item.stat().st_mtime > 120):
                         item.unlink(missing_ok=True)
@@ -566,15 +587,16 @@ class DownloadManager:
 
     @classmethod
     def _check_disk_space(cls) -> bool:
-        """Return True if there is at least 1GB of free space in /tmp.
+        """Return True if there is at least 1GB of free space in temp dir.
         If space is low, automatically executes an immediate emergency cleanup pass
         to reclaim disk space before rejecting the job.
         """
+        temp_dir = tempfile.gettempdir()
         try:
-            usage = shutil.disk_usage('/tmp')
+            usage = shutil.disk_usage(temp_dir)
             if usage.free < _MIN_FREE_DISK_BYTES:
                 cls._emergency_cleanup_tmp()
-                usage = shutil.disk_usage('/tmp')
+                usage = shutil.disk_usage(temp_dir)
             return usage.free >= _MIN_FREE_DISK_BYTES
         except Exception:
             return True  # If we can't check, allow the download
@@ -1359,6 +1381,8 @@ class DownloadManager:
         await self._broadcast_job(job)
 
         try:
+            downloader = self._build_downloader(config, job_id=job_id)
+
             # Use cached download queue when available (avoids redundant API call)
             download_queue = self._job_download_queues.get(job_id)
 
@@ -1367,7 +1391,6 @@ class DownloadManager:
             else:
                 # Cache miss — rebuild from API (fallback)
                 logger.info("[Retry] Cache miss for job %s, rebuilding queue from API", job_id)
-                downloader = self._build_downloader(config, job_id=job_id)
                 url_info = downloader.get_url_info(job.url)
                 if not url_info:
                     track.stage = DownloadStage.ERROR
@@ -1376,9 +1399,22 @@ class DownloadManager:
                     return
 
                 download_queue = await downloader.get_download_queue(url_info)
-                if not download_queue or track_index >= len(download_queue):
+                if not download_queue:
                     track.stage = DownloadStage.ERROR
                     track.error_message = "Could not rebuild download queue"
+                    await self._broadcast_job(job)
+                    return
+
+                # Re-apply exclude_videos filter if applicable
+                if config.exclude_videos:
+                    download_queue = [
+                        item for item in download_queue
+                        if getattr(item, 'media_metadata', {}).get('type') != 'music-videos'
+                    ]
+
+                if track_index >= len(download_queue):
+                    track.stage = DownloadStage.ERROR
+                    track.error_message = "Track index out of range in rebuilt queue"
                     await self._broadcast_job(job)
                     return
 
@@ -1545,12 +1581,21 @@ class DownloadManager:
                 await self._broadcast_job(job)
                 return
 
-            download_queue = await downloader.get_download_queue(url_info)
+            download_queue = self._job_download_queues.get(job_id)
             if not download_queue:
-                for i in failed_indices:
-                    job.tracks[i].error_message = "Could not rebuild download queue"
-                await self._broadcast_job(job)
-                return
+                download_queue = await downloader.get_download_queue(url_info)
+                if not download_queue:
+                    for i in failed_indices:
+                        job.tracks[i].error_message = "Could not rebuild download queue"
+                    await self._broadcast_job(job)
+                    return
+
+                if config.exclude_videos:
+                    download_queue = [
+                        item for item in download_queue
+                        if getattr(item, 'media_metadata', {}).get('type') != 'music-videos'
+                    ]
+                self._job_download_queues[job_id] = download_queue
 
             for idx, track_index in enumerate(failed_indices):
                 if track_index >= len(download_queue):
@@ -1746,10 +1791,10 @@ def check_semaphore_health() -> None:
                 logger.info("Watchdog: sent cancel signal to job %s task", job_id)
                 break
         else:
-            # Task not found — force-release semaphore and clean up tracking
-            logger.warning(
-                "Watchdog: job %s task not found, force-releasing semaphore slot",
-                job_id,
-            )
-            _active_jobs.pop(job_id, None)
-            _download_semaphore.release()
+            # Task not found — force-release semaphore only if this job was actually tracked as holding a slot
+            if _active_jobs.pop(job_id, None) is not None:
+                logger.warning(
+                    "Watchdog: job %s task not found, force-releasing semaphore slot",
+                    job_id,
+                )
+                _download_semaphore.release()

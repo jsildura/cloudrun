@@ -59,7 +59,7 @@ class AppleMusicApi:
             )
 
         return await cls.create(
-            storefront=None,
+            storefront=storefront,
             media_user_token=media_user_token,
             developer_token=None,
             *args,
@@ -144,7 +144,9 @@ class AppleMusicApi:
                 home_page,
             )
         if not index_js_uri_match:
-            raise Exception("index.js URI not found in Apple Music homepage")
+            raise GamdlError(
+                "index.js URI not found in Apple Music homepage (Apple may have updated their web player structure)"
+            )
         index_js_uri = index_js_uri_match.group(1)
 
         response = await self.client.get(f"{APPLE_MUSIC_HOMEPAGE_URL}/{index_js_uri}")
@@ -152,7 +154,9 @@ class AppleMusicApi:
 
         token_match = re.search('(?=eyJ)(.*?)(?=")', index_js_page)
         if not token_match:
-            raise Exception("Token not found in index.js page")
+            raise GamdlError(
+                "Developer token not found in Apple Music web player bundle (Apple may have updated their token placement)"
+            )
         token = token_match.group(1)
 
         logger.debug(f"Token: {token}")
@@ -164,6 +168,7 @@ class AppleMusicApi:
 
     async def _initialize_account_info(self) -> None:
         if not self.media_user_token:
+            self.account_info = None
             return
 
         self.client.cookies.update(
@@ -172,17 +177,26 @@ class AppleMusicApi:
             }
         )
 
-        self.account_info = await self.get_account_info()
-        self.storefront = self.account_info["meta"]["subscription"]["storefront"]
+        try:
+            self.account_info = await self.get_account_info()
+            self.storefront = (
+                self.account_info.get("meta", {})
+                .get("subscription", {})
+                .get("storefront", self.storefront)
+            )
+        except Exception as e:
+            logger.warning("Failed to initialize account info: %s", e)
+            self.account_info = None
+
+    @property
+    def authenticated(self) -> bool:
+        return bool(self.media_user_token) and getattr(self, "account_info", None) is not None
 
     @property
     def active_subscription(self) -> bool:
         return (
-            getattr(self, "account_info", {})
-            .get("meta", {})
-            .get("subscription", {})
-            .get("active", False)
-        )
+            getattr(self, "account_info", None) or {}
+        ).get("meta", {}).get("subscription", {}).get("active", False)
 
     @property
     def account_restrictions(self) -> dict | None:
@@ -382,15 +396,9 @@ class AppleMusicApi:
         extend: str = "extendedAssetUrls",
     ) -> typing.AsyncGenerator[dict, None]:
         next_uri = api_response.get("next")
-        if not next_uri:
-            return
-
-        next_uri_params = parse_qs(urlparse(next_uri).query)
-        limit = int(next_uri_params["offset"][0])
         while next_uri:
             extended_api_data = await self._get_extended_api_data(
                 next_uri,
-                limit,
                 extend,
             )
             yield extended_api_data
@@ -399,16 +407,9 @@ class AppleMusicApi:
     async def _get_extended_api_data(
         self,
         next_uri: str,
-        limit: int,
         extend: str,
     ) -> dict:
-        next_uri_params = parse_qs(urlparse(next_uri).query)
-        params = {
-            "limit": limit,
-            "offset": next_uri_params["offset"][0],
-            "extend": extend,
-        }
-        extended_api_data = await self._amp_request(next_uri, params)
+        extended_api_data = await self._amp_request(next_uri)
         logger.debug(f"Extended API data: {extended_api_data}")
 
         return extended_api_data

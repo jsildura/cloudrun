@@ -8,7 +8,11 @@
  *   incrementDownloadCount()                  — Atomic counter bump
  *   subscribeToDownloadCount(callback)        — Real-time counter listener (returns unsubscribe fn)
  *
- * Requires: firebase-config.js loaded first (provides window.db).
+ * Requires: firebase-config.js loaded first (provides window.db, firebaseAuthReady,
+ * firebaseCurrentUser).
+ *
+ * Firestore rules scope every download-history document to the authenticated
+ * user's uid (`user_id` field), so all reads/writes filter by the current user.
  */
 
 (function () {
@@ -19,6 +23,11 @@
     const STATS_DOC_ID = 'general';
     const MAX_HISTORY_ITEMS = 50;
 
+    // Resolves once the current user is authenticated (or rejects on failure).
+    function getCurrentUser() {
+        return window.firebaseAuthReady.then(() => window.firebaseCurrentUser);
+    }
+
     // ── Add a Download Record ──────────────────────────────────────────────
 
     /**
@@ -28,8 +37,10 @@
     window.addDownloadHistory = async function (item) {
         if (!window.db) return;
         try {
+            const user = await getCurrentUser();
             await window.db.collection(COLLECTION_NAME).add({
                 ...item,
+                user_id: user.uid,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp(),
             });
         } catch (error) {
@@ -41,43 +52,63 @@
     // ── Subscribe to History (Real-Time) ───────────────────────────────────
 
     /**
-     * Subscribe to the most recent download history items.
+     * Subscribe to the current user's most recent download history items.
      * @param {Function} callback - Called with array of history items on each change
      * @param {number} maxItems - Max items to return (default: 50)
      * @returns {Function} Unsubscribe function
      */
     window.subscribeToDownloadHistory = function (callback, maxItems = MAX_HISTORY_ITEMS) {
         if (!window.db) return () => {};
-        return window.db
-            .collection(COLLECTION_NAME)
-            .orderBy('timestamp', 'desc')
-            .limit(maxItems)
-            .onSnapshot(
-                (snapshot) => {
-                    const items = snapshot.docs.map((doc) => ({
-                        id: doc.id,
-                        ...doc.data(),
-                    }));
-                    callback(items);
-                },
-                (error) => {
-                    console.error('Error listening to download history:', error);
-                }
-            );
+        let unsubscribe = () => {};
+
+        getCurrentUser()
+            .then((user) => {
+                unsubscribe = window.db
+                    .collection(COLLECTION_NAME)
+                    .where('user_id', '==', user.uid)
+                    .orderBy('timestamp', 'desc')
+                    .limit(maxItems)
+                    .onSnapshot(
+                        (snapshot) => {
+                            const items = snapshot.docs.map((doc) => ({
+                                id: doc.id,
+                                ...doc.data(),
+                            }));
+                            callback(items);
+                        },
+                        (error) => {
+                            console.error('Error listening to download history:', error);
+                        }
+                    );
+            })
+            .catch((error) => {
+                console.error('History subscription requires auth:', error);
+            });
+
+        return () => unsubscribe();
     };
 
     // ── Clear History ──────────────────────────────────────────────────────
 
     /**
-     * Delete all documents in the download_history collection.
+     * Delete all download_history documents owned by the current user.
      */
     window.clearDownloadHistory = async function () {
         if (!window.db) return;
         try {
-            const snapshot = await window.db.collection(COLLECTION_NAME).get();
-            const batch = window.db.batch();
-            snapshot.docs.forEach((doc) => batch.delete(doc.ref));
-            await batch.commit();
+            const user = await getCurrentUser();
+            const snapshot = await window.db
+                .collection(COLLECTION_NAME)
+                .where('user_id', '==', user.uid)
+                .get();
+            const docs = snapshot.docs;
+            const CHUNK_SIZE = 450;
+            for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
+                const batch = window.db.batch();
+                const chunk = docs.slice(i, i + CHUNK_SIZE);
+                chunk.forEach((doc) => batch.delete(doc.ref));
+                await batch.commit();
+            }
         } catch (error) {
             console.error('Failed to clear download history:', error);
             throw error;
@@ -89,6 +120,10 @@
     /**
      * Atomically increment the total_downloads counter.
      * Auto-creates the stats document on first call.
+     *
+     * Note: `stats` is server-write-only in the Firestore rules; client-side
+     * increments are best-effort and will no-op when rejected. The canonical
+     * counter lives behind a Cloud Function in production.
      */
     window.incrementDownloadCount = async function () {
         if (!window.db) return;
@@ -104,8 +139,9 @@
                 // First-ever download — create the stats document
                 await statsRef.set({ total_downloads: 1 });
             } else {
-                console.error('Failed to increment download count:', error);
-                // Don't re-throw — counter failure should never break the app
+                // Permission-denied from read-only stats rules is expected;
+                // never break the download flow over a counter.
+                console.warn('Failed to increment download count:', error);
             }
         }
     };

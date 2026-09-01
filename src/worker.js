@@ -14,6 +14,19 @@ export default {
     async fetch(request, env) {
         const url = new URL(request.url);
 
+        // ── Handle CORS preflight for /api/* ────────────────────────────
+        if (request.method === 'OPTIONS' && url.pathname.startsWith('/api/')) {
+            return new Response(null, {
+                status: 204,
+                headers: {
+                    'Access-Control-Allow-Origin': url.origin,
+                    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+                    'Access-Control-Max-Age': '86400',
+                },
+            });
+        }
+
         // ── Proxy /api/* requests to the backend ────────────────────────
         if (url.pathname.startsWith('/api/')) {
             const backendUrl = env.API_URL;
@@ -54,19 +67,6 @@ export default {
                     { status: 502, headers: { 'content-type': 'application/json' } }
                 );
             }
-        }
-
-        // ── Handle CORS preflight for /api/* ────────────────────────────
-        if (request.method === 'OPTIONS' && url.pathname.startsWith('/api/')) {
-            return new Response(null, {
-                status: 204,
-                headers: {
-                    'Access-Control-Allow-Origin': url.origin,
-                    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
-                    'Access-Control-Max-Age': '86400',
-                },
-            });
         }
 
         // ── Serve static assets ─────────────────────────────────────────

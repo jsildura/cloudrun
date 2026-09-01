@@ -25,10 +25,27 @@
     };
 
     // Initialize Firebase (compat mode)
-    if (typeof firebase !== 'undefined') {
-        firebase.initializeApp(firebaseConfig);
-        window.db = firebase.firestore();
-    } else {
+    if (typeof firebase === 'undefined') {
         console.warn('[Firebase] SDK not loaded — history features disabled');
+        return;
     }
+
+    firebase.initializeApp(firebaseConfig);
+    window.db = firebase.firestore();
+
+    // Anonymous auth — Firestore rules require an authenticated uid and scope
+    // every download-history document to its owner. Sign in once at startup and
+    // expose a promise that resolves once the current user is available.
+    window.firebaseAuthReady = new Promise((resolve) => {
+        firebase.auth().onAuthStateChanged((user) => {
+            if (user) {
+                window.firebaseCurrentUser = user;
+                resolve(user);
+            } else {
+                firebase.auth().signInAnonymously().catch((err) => {
+                    console.error('[Firebase] Anonymous sign-in failed:', err);
+                });
+            }
+        });
+    });
 })();

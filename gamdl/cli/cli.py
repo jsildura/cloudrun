@@ -156,6 +156,7 @@ async def main(config: CliConfig):
         codec_priority=config.music_video_codec_priority,
         remux_format=config.music_video_remux_format,
         resolution=config.music_video_resolution,
+        playlist_mode=config.playlist_mode,
     )
     uploaded_video_downloader = AppleMusicUploadedVideoDownloader(
         base_downloader=base_downloader,
@@ -212,14 +213,17 @@ async def main(config: CliConfig):
     if config.read_urls_as_txt:
         urls_from_file = []
         for url in config.urls:
-            if Path(url).is_file() and Path(url).exists():
+            p = Path(url)
+            if p.is_file() and p.exists():
                 urls_from_file.extend(
                     [
                         line.strip()
-                        for line in Path(url).read_text(encoding="utf-8").splitlines()
+                        for line in p.read_text(encoding="utf-8").splitlines()
                         if line.strip()
                     ]
                 )
+            else:
+                logger.warning(f'--read-urls-as-txt: file "{url}" not found or not readable, skipping.')
         urls = urls_from_file
     else:
         urls = config.urls

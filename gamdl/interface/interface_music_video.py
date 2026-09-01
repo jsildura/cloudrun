@@ -169,6 +169,7 @@ class AppleMusicMusicVideoInterface(AppleMusicInterface):
             video_track=stream_info_video,
             audio_track=stream_info_audio,
             file_format=file_format,
+            media_id=metadata.get("id"),
         )
         logger.debug(f"Stream info: {stream_info}")
 
@@ -270,25 +271,26 @@ class AppleMusicMusicVideoInterface(AppleMusicInterface):
         self,
         m3u8_obj: m3u8.M3U8,
         key_format: str,
-    ) -> str:
-        return next(
-            (key for key in m3u8_obj.keys if key.keyformat == key_format),
+    ) -> str | None:
+        key = next(
+            (key for key in m3u8_obj.keys if key and getattr(key, "keyformat", None) == key_format),
             None,
-        ).uri
+        )
+        return key.uri if key else None
 
-    def get_widevine_pssh(self, m3u8_obj: m3u8.M3U8) -> str:
+    def get_widevine_pssh(self, m3u8_obj: m3u8.M3U8) -> str | None:
         return self._get_key_by_format(
             m3u8_obj,
             "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed",
         )
 
-    def get_playready_pssh(self, m3u8_obj: m3u8.M3U8) -> str:
+    def get_playready_pssh(self, m3u8_obj: m3u8.M3U8) -> str | None:
         return self._get_key_by_format(
             m3u8_obj,
             "com.microsoft.playready",
         )
 
-    def get_fairplay_key(self, m3u8_obj: m3u8.M3U8) -> str:
+    def get_fairplay_key(self, m3u8_obj: m3u8.M3U8) -> str | None:
         return self._get_key_by_format(
             m3u8_obj,
             "com.apple.streamingkeydelivery",
@@ -361,17 +363,25 @@ class AppleMusicMusicVideoInterface(AppleMusicInterface):
         stream_info: StreamInfoAv,
         cdm: Cdm,
     ) -> DecryptionKeyAv:
-        decryption_key_video = await AppleMusicInterface.get_decryption_key(
-            self,
-            stream_info.video_track.widevine_pssh,
-            stream_info.media_id,
-            cdm,
+        decryption_key_video = (
+            await AppleMusicInterface.get_decryption_key(
+                self,
+                stream_info.video_track.widevine_pssh,
+                stream_info.media_id,
+                cdm,
+            )
+            if stream_info.video_track and stream_info.video_track.widevine_pssh
+            else None
         )
-        decryption_key_audio = await AppleMusicInterface.get_decryption_key(
-            self,
-            stream_info.audio_track.widevine_pssh,
-            stream_info.media_id,
-            cdm,
+        decryption_key_audio = (
+            await AppleMusicInterface.get_decryption_key(
+                self,
+                stream_info.audio_track.widevine_pssh,
+                stream_info.media_id,
+                cdm,
+            )
+            if stream_info.audio_track and stream_info.audio_track.widevine_pssh
+            else None
         )
 
         return DecryptionKeyAv(

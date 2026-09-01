@@ -63,17 +63,45 @@ def _get_user_dm(token: str) -> DownloadManager:
     # Evict stale user managers to free memory
     now = time.time()
     stale_keys = [
-        k for k, ts in _user_last_access.items()
+        k for k, ts in list(_user_last_access.items())
         if now - ts > _USER_MANAGER_TTL and k != key
     ]
     for k in stale_keys:
-        dm = _user_managers.pop(k, None)
+        dm = _user_managers.get(k)
         if dm:
-            # Clean up any remaining temp dirs
+            has_active = any(
+                j.stage in (
+                    DownloadStage.QUEUED,
+                    DownloadStage.PARSING,
+                    DownloadStage.PREPARING,
+                    DownloadStage.DOWNLOADING,
+                )
+                for j in dm.jobs.values()
+            )
+            if has_active:
+                continue
+
+            _user_managers.pop(k, None)
+            _user_last_access.pop(k, None)
+
+            # Cancel remaining tasks and clean up
+            for task in dm._job_tasks.values():
+                if task and not task.done():
+                    task.cancel()
             for jid in list(dm._job_temp_dirs.keys()):
                 dm._cleanup_job(jid)
+
+            # Close HTTP clients if event loop is running
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    if hasattr(dm, "_apple_music_api") and hasattr(dm._apple_music_api, "http_client"):
+                        loop.create_task(dm._apple_music_api.http_client.aclose())
+                    if hasattr(dm, "_itunes_api") and hasattr(dm._itunes_api, "http_client"):
+                        loop.create_task(dm._itunes_api.http_client.aclose())
+            except Exception:
+                pass
             logger.info("Evicted stale user manager: %s", k)
-        _user_last_access.pop(k, None)
 
     _user_last_access[key] = now
 
@@ -91,6 +119,29 @@ def _get_current_config() -> ServerConfig:
     return load_config()
 
 
+ALLOWED_USER_FIELDS = {
+    "song_codec", "codec_fallback", "synced_lyrics_format", "no_synced_lyrics",
+    "synced_lyrics_only", "save_synced_lyrics", "music_video_resolution",
+    "exclude_videos", "cover_format", "cover_size", "save_cover",
+    "save_animated_artwork", "save_playlist", "playlist_mode", "overwrite",
+    "download_mode", "remux_mode",
+    "language", "use_wrapper", "rate_limit_delay",
+    "album_folder_template", "compilation_folder_template",
+    "no_album_folder_template", "no_album_file_template",
+    "single_disc_file_template", "multi_disc_file_template",
+    "playlist_file_template", "date_tag_template", "exclude_tags",
+    "truncate", "use_album_date", "fetch_extra_tags",
+    "music_video_codec_priority", "music_video_remux_format",
+    "uploaded_video_quality",
+}
+
+_SENSITIVE_CONFIG_KEYS = {
+    "r2_access_key", "r2_secret_key", "r2_endpoint", "r2_bucket",
+    "cookies_path", "wvd_path", "ffmpeg_path", "mp4decrypt_path",
+    "mp4box_path", "nm3u8dlre_path",
+}
+
+
 def _merge_user_config(base: ServerConfig, overrides: ConfigUpdate | None) -> ServerConfig:
     """Apply per-user config overrides on top of the server base config.
 
@@ -100,21 +151,6 @@ def _merge_user_config(base: ServerConfig, overrides: ConfigUpdate | None) -> Se
     """
     if overrides is None:
         return base
-
-    # Only allow user-facing preference fields to be overridden.
-    # This prevents a malicious or buggy client from changing paths,
-    # cloud settings, or tool binaries.
-    ALLOWED_USER_FIELDS = {
-        "song_codec", "codec_fallback", "synced_lyrics_format", "no_synced_lyrics",
-        "synced_lyrics_only", "save_synced_lyrics", "music_video_resolution",
-        "exclude_videos", "cover_format", "cover_size", "save_cover",
-        "save_animated_artwork", "save_playlist", "playlist_mode", "overwrite",
-        "download_mode", "remux_mode",
-        "language", "use_wrapper", "rate_limit_delay",
-        "album_folder_template", "compilation_folder_template",
-        "single_disc_file_template", "multi_disc_file_template",
-        "playlist_file_template",
-    }
 
     from dataclasses import replace
     update_data = overrides.model_dump(exclude_none=True)
@@ -225,51 +261,79 @@ async def preview_url(req: DownloadRequest, request: Request) -> PreviewResponse
     raise HTTPException(status_code=500, detail=f"Preview failed: {last_error}")
 
 
+_convert_m3u8_semaphore = asyncio.Semaphore(3)
+_ALLOWED_M3U8_HOSTS = (".mzstatic.com", ".apple.com", ".akamaized.net", ".apple-dns.net")
+
+
 @router.get("/convert-m3u8")
 async def convert_m3u8(url: str, request: Request, background_tasks: BackgroundTasks, quality: int = 720):
     """Convert an m3u8 stream to an mp4 file using yt-dlp to select resolution."""
     import asyncio
+    import tempfile
+    import urllib.parse
+
     _check_rate_limit(request)
-    
+    _extract_token(request)
+
     if not url.endswith('.m3u8'):
         raise HTTPException(status_code=400, detail="URL must be an m3u8 playlist")
-        
-    temp_file = f"/tmp/artwork_{uuid.uuid4().hex}.mp4"
-    
+
+    # Validate hostname against Apple CDN allowlist to prevent SSRF
+    parsed = urllib.parse.urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    if not any(hostname.endswith(allowed) or hostname == allowed.lstrip(".") for allowed in _ALLOWED_M3U8_HOSTS):
+        raise HTTPException(status_code=400, detail="URL host is not an authorized media source")
+
+    # Clamp quality to valid video heights
+    safe_quality = min(max(int(quality), 360), 1080)
+
+    temp_dir = tempfile.gettempdir()
+    temp_file = os.path.join(temp_dir, f"artwork_{uuid.uuid4().hex}.mp4")
+
     cmd = [
         "yt-dlp",
-        "-f", f"bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best",
+        "-f", f"bestvideo[height<={safe_quality}]+bestaudio/best[height<={safe_quality}]/best",
         "--merge-output-format", "mp4",
         "-o", temp_file,
         url
     ]
-    
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    
-    stdout, stderr = await process.communicate()
-    
+
+    try:
+        async with _convert_m3u8_semaphore:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=45.0)
+    except asyncio.TimeoutError:
+        if process:
+            try:
+                process.kill()
+            except Exception:
+                pass
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+        raise HTTPException(status_code=504, detail="Conversion timed out")
+
     if process.returncode != 0:
-        logger.error(f"yt-dlp failed to convert artwork: {stderr.decode()}")
+        logger.error(f"yt-dlp failed to convert artwork: {stderr.decode(errors='ignore')}")
         if os.path.exists(temp_file):
             os.remove(temp_file)
         raise HTTPException(status_code=500, detail="Failed to convert animated artwork to MP4")
-        
+
     def cleanup():
         if os.path.exists(temp_file):
             try:
                 os.remove(temp_file)
             except Exception as e:
                 logger.error(f"Failed to remove temp file {temp_file}: {e}")
-                
+
     background_tasks.add_task(cleanup)
-    
+
     return FileResponse(
-        path=temp_file, 
-        filename="artwork.mp4", 
+        path=temp_file,
+        filename="artwork.mp4",
         media_type="video/mp4"
     )
 
@@ -419,67 +483,70 @@ async def system_stats(request: Request) -> dict:
     }
 
 
-def check_wrapper_healthy() -> bool:
-    """Synchronous check if wrapper account HTTP port and decrypt TCP socket are both healthy."""
-    import socket
-    import urllib.request
-    import urllib.error
-
-    cfg = _get_current_config()
-    account_url = cfg.wrapper_account_url  # e.g. http://127.0.0.1:30020/
-    decrypt_ip = cfg.wrapper_decrypt_ip    # e.g. 127.0.0.1:10020
-
-    # 1. Check account HTTP port 30020
-    try:
-        req = urllib.request.Request(account_url, method="GET")
-        urllib.request.urlopen(req, timeout=2)
-    except Exception:
-        return False
-
-    # 2. Check decrypt TCP socket port 10020
-    try:
-        host, port_str = decrypt_ip.split(":")
-        with socket.create_connection((host, int(port_str)), timeout=2.0):
-            pass
-    except Exception:
-        return False
-
-    return True
-
-
 def do_wrapper_restart() -> dict:
     """Kill any existing wrapper processes reliably via psutil and start a fresh daemon."""
     import subprocess
-    import signal
     import urllib.request
     import urllib.error
 
     wrapper_bin = "/app/Wrapper/wrapper"
+    if not os.path.isfile(wrapper_bin):
+        local_wrapper = os.path.join(os.getcwd(), "Wrapper", "wrapper.exe" if sys.platform == "win32" else "wrapper")
+        if os.path.isfile(local_wrapper):
+            wrapper_bin = local_wrapper
 
-    # 1. Kill any existing wrapper processes reliably via psutil (does not rely on pkill)
+    # 1. Kill only processes belonging specifically to the wrapper binary/process name
     try:
-        for p in psutil.process_iter(["pid", "name", "cmdline"]):
+        current_pid = os.getpid()
+        for p in psutil.process_iter(["pid", "name", "exe", "cmdline"]):
             try:
-                name = p.info.get("name") or ""
-                cmdline = " ".join(p.info.get("cmdline") or [])
-                if "wrapper" in name.lower() or "main" in name.lower() or "wrapper" in cmdline.lower():
-                    if p.pid != os.getpid():
-                        p.send_signal(signal.SIGKILL)
+                if p.pid == current_pid:
+                    continue
+                name = (p.info.get("name") or "").lower()
+                exe = (p.info.get("exe") or "").lower()
+                cmdline = [c.lower() for c in (p.info.get("cmdline") or [])]
+
+                is_wrapper = (
+                    name in ("wrapper", "wrapper.exe")
+                    or (exe and os.path.basename(exe) in ("wrapper", "wrapper.exe"))
+                    or any("wrapper" in c and ("./wrapper" in c or "/wrapper" in c or "\\wrapper" in c) for c in cmdline)
+                )
+
+                if is_wrapper:
+                    try:
+                        p.terminate()
+                    except Exception:
+                        pass
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        # Wait up to 1 second for graceful termination, then escalate if needed
+        time.sleep(1)
+        for p in psutil.process_iter(["pid", "name", "exe"]):
+            try:
+                if p.pid == current_pid:
+                    continue
+                name = (p.info.get("name") or "").lower()
+                if name in ("wrapper", "wrapper.exe"):
+                    try:
+                        p.kill()
+                    except Exception:
+                        pass
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
     except Exception as e:
         logger.warning(f"Error terminating old wrapper processes: {e}")
 
-    # Reap zombies if uvicorn is PID 1
-    try:
-        while True:
-            pid, status = os.waitpid(-1, os.WNOHANG)
-            if pid <= 0:
-                break
-    except Exception:
-        pass
+    # Reap zombies on Unix if uvicorn is PID 1
+    if hasattr(os, "waitpid") and hasattr(os, "WNOHANG"):
+        try:
+            while True:
+                pid, status = os.waitpid(-1, os.WNOHANG)
+                if pid <= 0:
+                    break
+        except Exception:
+            pass
 
-    import time
     time.sleep(1)
 
     # 2. Check if the wrapper binary exists
@@ -488,17 +555,18 @@ def do_wrapper_restart() -> dict:
 
     # 3. Start the wrapper in the background
     try:
+        wrapper_dir = os.path.dirname(os.path.abspath(wrapper_bin))
         subprocess.Popen(
-            ["./wrapper", "-H", "0.0.0.0"],
-            cwd="/app/Wrapper",
+            [wrapper_bin, "-H", "0.0.0.0"],
+            cwd=wrapper_dir,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            start_new_session=True,
+            start_new_session=True if sys.platform != "win32" else False,
         )
     except Exception as e:
         return {"success": False, "message": f"Failed to start: {e}"}
 
-    # 4. Wait and then ping both ports to verify it started
+    # 4. Wait and then ping to verify it started
     time.sleep(3)
 
     cfg = _get_current_config()
@@ -512,9 +580,10 @@ def do_wrapper_restart() -> dict:
 
 
 @router.get("/wrapper/status")
-async def wrapper_status() -> dict:
+async def wrapper_status(request: Request) -> dict:
     """Check if the Wrapper service is reachable and decrypt port 10020 is responsive."""
     import asyncio
+    _check_rate_limit(request)
     available = await asyncio.get_event_loop().run_in_executor(None, check_wrapper_healthy)
     return {"available": available}
 
@@ -524,9 +593,12 @@ _WRAPPER_RESTART_COOLDOWN = 60  # Reduced cooldown to 60s for better user experi
 
 
 @router.post("/wrapper/restart")
-async def wrapper_restart() -> dict:
+async def wrapper_restart(request: Request) -> dict:
     """Kill existing Wrapper process using psutil and start a new one."""
     import asyncio
+
+    _check_rate_limit(request)
+    _extract_token(request)
 
     global _last_wrapper_restart
     now = time.time()
@@ -542,23 +614,32 @@ async def wrapper_restart() -> dict:
 @router.get("/config")
 async def get_config(request: Request) -> dict:
     _check_rate_limit(request)
+    _extract_token(request)
     cfg = _get_current_config()
-    return asdict(cfg)
+    cfg_dict = asdict(cfg)
+    for secret in _SENSITIVE_CONFIG_KEYS:
+        cfg_dict.pop(secret, None)
+    return cfg_dict
 
 
 @router.put("/config")
 async def update_config(update: ConfigUpdate, request: Request) -> dict:
     _check_rate_limit(request)
+    _extract_token(request)
     cfg = _get_current_config()
 
-    # Apply non-None fields from the update
+    # Apply only allowed non-sensitive user-preference fields from the update
     update_data = update.model_dump(exclude_none=True)
-    for key, value in update_data.items():
+    safe_updates = {k: v for k, v in update_data.items() if k in ALLOWED_USER_FIELDS}
+    for key, value in safe_updates.items():
         if hasattr(cfg, key):
             setattr(cfg, key, value)
 
     save_config(cfg)
-    return asdict(cfg)
+    cfg_dict = asdict(cfg)
+    for secret in _SENSITIVE_CONFIG_KEYS:
+        cfg_dict.pop(secret, None)
+    return cfg_dict
 
 
 # ── Files ─────────────────────────────────────────────────────────────────────
@@ -567,6 +648,7 @@ async def update_config(update: ConfigUpdate, request: Request) -> dict:
 @router.get("/files")
 async def list_files(request: Request) -> list[dict]:
     _check_rate_limit(request)
+    _extract_token(request)
     cfg = _get_current_config()
 
     # In cloud mode, files are in R2 — not on local disk
@@ -599,21 +681,23 @@ async def list_files(request: Request) -> list[dict]:
 @router.get("/files/{file_path:path}")
 async def serve_file(file_path: str, request: Request):
     _check_rate_limit(request)
+    _extract_token(request)
     cfg = _get_current_config()
 
     if cfg.cloud_mode:
         raise HTTPException(status_code=404, detail="File serving disabled in cloud mode. Use download_url from track progress.")
 
-    full_path = Path(cfg.output_path) / file_path
+    root = Path(cfg.output_path).resolve()
+    full_path = (root / file_path).resolve()
+
+    # Security: check containment before checking existence (prevents path existence oracle)
+    try:
+        full_path.relative_to(root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     if not full_path.exists() or not full_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
-
-    # Security: prevent path traversal
-    try:
-        full_path.resolve().relative_to(Path(cfg.output_path).resolve())
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied")
 
     return FileResponse(
         path=str(full_path),

@@ -9,10 +9,12 @@
 class EventStream {
     constructor() {
         this.handlers = {};
-        this._abortController = null;
+        this._mainAbortController = null;
+        this._jobAbortControllers = new Map();
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
         this.reconnectDelay = 2000; // ms
+        this._isDisconnected = false;
     }
 
     /**
@@ -20,17 +22,18 @@ class EventStream {
      * Uses a custom fetch-based approach to include Authorization header.
      */
     async connect() {
+        this._isDisconnected = false;
         const token = AuthStorage.getToken();
         if (!token) {
             console.error('EventStream: No auth token available');
             return;
         }
 
-        // Abort any existing connection
-        if (this._abortController) {
-            this._abortController.abort();
+        // Abort any existing main connection
+        if (this._mainAbortController) {
+            this._mainAbortController.abort();
         }
-        this._abortController = new AbortController();
+        this._mainAbortController = new AbortController();
 
         const url = `${api.baseUrl}/api/events`;
 
@@ -40,7 +43,7 @@ class EventStream {
                     'Authorization': `Bearer ${token}`,
                     'Accept': 'text/event-stream',
                 },
-                signal: this._abortController.signal,
+                signal: this._mainAbortController.signal,
             });
 
             if (!response.ok) {
@@ -56,7 +59,12 @@ class EventStream {
 
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) break;
+                if (done) {
+                    if (!this._isDisconnected) {
+                        this._tryReconnect();
+                    }
+                    break;
+                }
 
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
@@ -71,7 +79,6 @@ class EventStream {
                             console.warn('EventStream: Failed to parse message', e);
                         }
                     }
-                    // Ignore comments (keepalives starting with ':')
                 }
             }
         } catch (err) {
@@ -81,7 +88,9 @@ class EventStream {
             }
             console.error('EventStream error:', err);
             this._emit('disconnected');
-            this._tryReconnect();
+            if (!this._isDisconnected) {
+                this._tryReconnect();
+            }
         }
     }
 
@@ -92,10 +101,11 @@ class EventStream {
         const token = AuthStorage.getToken();
         if (!token) return;
 
-        if (this._abortController) {
-            this._abortController.abort();
+        if (this._jobAbortControllers.has(jobId)) {
+            this._jobAbortControllers.get(jobId).abort();
         }
-        this._abortController = new AbortController();
+        const jobAbort = new AbortController();
+        this._jobAbortControllers.set(jobId, jobAbort);
 
         const url = `${api.baseUrl}/api/events/${jobId}`;
 
@@ -105,7 +115,7 @@ class EventStream {
                     'Authorization': `Bearer ${token}`,
                     'Accept': 'text/event-stream',
                 },
-                signal: this._abortController.signal,
+                signal: jobAbort.signal,
             });
 
             if (!response.ok) throw new Error(`SSE failed: ${response.status}`);
@@ -136,6 +146,8 @@ class EventStream {
         } catch (err) {
             if (err.name === 'AbortError') return;
             console.error('EventStream job error:', err);
+        } finally {
+            this._jobAbortControllers.delete(jobId);
         }
     }
 
@@ -156,10 +168,15 @@ class EventStream {
 
     /** Disconnect and clean up. */
     disconnect() {
-        if (this._abortController) {
-            this._abortController.abort();
-            this._abortController = null;
+        this._isDisconnected = true;
+        if (this._mainAbortController) {
+            this._mainAbortController.abort();
+            this._mainAbortController = null;
         }
+        for (const controller of this._jobAbortControllers.values()) {
+            controller.abort();
+        }
+        this._jobAbortControllers.clear();
     }
 
     /** Auto-reconnect with exponential backoff. */

@@ -183,16 +183,30 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
     def fix_key_id(self, input_path: str):
         count = 0
         with open(input_path, "rb+") as file:
-            while data := file.read(4096):
-                pos = file.tell()
-                i = 0
-                while tenc := max(0, data.find(b"tenc", i)):
-                    kid = tenc + 12
-                    file.seek(max(0, pos - 4096) + kid, 0)
-                    file.write(bytes.fromhex(f"{count:032}"))
-                    count += 1
-                    i = kid + 1
-                file.seek(pos, 0)
+            file.seek(0, 2)
+            file_size = file.tell()
+            file.seek(0)
+
+            offset = 0
+            while offset < file_size:
+                file.seek(offset)
+                chunk = file.read(65536)
+                if not chunk:
+                    break
+
+                idx = 0
+                while True:
+                    tenc_idx = chunk.find(b"tenc", idx)
+                    if tenc_idx == -1:
+                        break
+                    kid_offset = offset + tenc_idx + 12
+                    if kid_offset + 16 <= file_size:
+                        file.seek(kid_offset)
+                        file.write(count.to_bytes(16, byteorder="big"))
+                        count += 1
+                    idx = tenc_idx + 4
+
+                offset += max(1, len(chunk) - 32)
 
     async def remux_mp4box(self, input_path: str, output_path: str):
         await async_subprocess(

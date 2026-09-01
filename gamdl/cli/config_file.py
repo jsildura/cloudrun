@@ -97,7 +97,10 @@ class ConfigFile:
                 f"'{type(param.type)}' is not implemented."
             )
 
-        return param.type.convert(value, None, None)
+        try:
+            return param.type.convert(value, param, self.click_context)
+        except Exception:
+            return param.type.convert(value, None, None)
 
     def add_params_default_to_config(self) -> None:
         has_changes = False
@@ -112,16 +115,8 @@ class ConfigFile:
             self._write_config_file()
 
     def cleanup_unknown_params(self) -> None:
-        param_names = {info.name for info in self.click_context.command.params}
-        has_changes = False
-
-        for key in list(self.config[self.section_name].keys()):
-            if key not in param_names:
-                self.config.remove_option(self.section_name, key)
-                has_changes = True
-
-        if has_changes:
-            self._write_config_file()
+        # Preserve unknown config parameters rather than deleting them from the INI file
+        pass
 
     def update_params_from_config(self) -> None:
         for param in self.click_context.command.params:

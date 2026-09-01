@@ -2,17 +2,19 @@ export async function onRequest(context) {
     const { request, env, next } = context;
     const url = new URL(request.url);
 
-    // Temporarily disabled Protected Access
-    return next();
-
     // 1. If no password is configured, allow all traffic
     if (!env.SITE_PASSWORD) {
         return next();
     }
 
-    // 2. Check for authentication cookie
-    const cookies = request.headers.get('Cookie') || '';
-    const isAuthenticated = cookies.includes(`gamdl_auth=${env.SITE_PASSWORD}`);
+    // 2. Check for authentication cookie with exact matching
+    const cookieHeader = request.headers.get('Cookie') || '';
+    const cookieMap = {};
+    cookieHeader.split(';').forEach(c => {
+        const [k, ...v] = c.trim().split('=');
+        if (k) cookieMap[k] = v.join('=');
+    });
+    const isAuthenticated = cookieMap['gamdl_auth'] === env.SITE_PASSWORD;
 
     if (isAuthenticated) {
         return next();
@@ -302,7 +304,7 @@ export async function onRequest(context) {
             color: var(--error);
             font-size: 14px;
             margin-top: 16px;
-            display: \${isError ? 'block' : 'none'};
+            display: ${isError ? 'block' : 'none'};
         }
 
         /* Mobile responsiveness */

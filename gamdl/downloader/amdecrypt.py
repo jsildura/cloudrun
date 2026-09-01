@@ -60,29 +60,37 @@ def read_box_header(f: BinaryIO) -> tuple[int, str, int]:
 
 
 def find_box(data: bytes, box_path: List[str]) -> Optional[bytes]:
-    """Find a box in MP4 data by path (e.g., ['moov', 'trak', 'mdia'])."""
+    """Find a box in MP4 data by path (e.g., ['moov', 'trak', 'mdia']).
+
+    Returns the content of the target box (after its header), scoped to the
+    containing box's size so we never read into sibling boxes.
+    """
     f = io.BytesIO(data)
+    remaining = len(data)
 
     for target_type in box_path:
         found = False
-        while True:
+        while remaining >= 8:
             pos = f.tell()
             size, box_type, header_size = read_box_header(f)
             if size == 0:
                 break
+            if size > remaining:
+                break
 
             if box_type == target_type:
-                f.seek(pos + header_size)  # Skip past header
+                f.seek(pos + header_size)
+                remaining = size - header_size
                 found = True
                 break
             else:
-                f.seek(pos + size)  # Skip this box
+                f.seek(pos + size)
+                remaining -= size
 
         if not found:
             return None
 
-    # Return remaining data from current position
-    return f.read()
+    return f.read(remaining)
 
 
 def extract_song(input_path: str) -> SongInfo:
@@ -267,7 +275,14 @@ def _parse_moof_mdat(
                 sample_size = entry.get("size", tfhd_info["default_size"])
                 sample_duration = entry.get("duration", tfhd_info["default_duration"])
 
-                if sample_size > 0 and mdat_read_offset + sample_size <= len(mdat_data):
+                if sample_size > 0:
+                    if mdat_read_offset + sample_size > len(mdat_data):
+                        raise ValueError(
+                            f"trun/mdat size mismatch: sample needs {sample_size} bytes "
+                            f"at mdat offset {mdat_read_offset}, but only "
+                            f"{len(mdat_data) - mdat_read_offset} bytes remain. "
+                            "The MP4 is corrupt or uses an unsupported layout."
+                        )
                     sample = SampleInfo(
                         data=mdat_data[
                             mdat_read_offset : mdat_read_offset + sample_size
@@ -721,11 +736,12 @@ def _write_moov(
         stsz_content += struct.pack(">I", len(sample.data))
     _write_fullbox(f, b"stsz", 0, 0, stsz_content)
 
-    # stco (chunk offset) - will be fixed up later
-    stco_pos = f.tell()
-    stco_content = struct.pack(">I", 1)  # entry_count
-    stco_content += struct.pack(">I", 0)  # chunk_offset (placeholder)
-    _write_fullbox(f, b"stco", 0, 0, stco_content)
+    # co64 (64-bit chunk offset) — always use 64-bit offsets so output files
+    # over 4 GiB (long DJ mixes, high-bitrate ALAC, video) are not truncated.
+    co64_pos = f.tell()
+    co64_content = struct.pack(">I", 1)  # entry_count
+    co64_content += struct.pack(">Q", 0)  # chunk_offset (placeholder)
+    _write_fullbox(f, b"co64", 0, 0, co64_content)
 
     _fixup_box_size(f, stbl_start, b"stbl")
     _fixup_box_size(f, minf_start, b"minf")
@@ -733,10 +749,10 @@ def _write_moov(
     _fixup_box_size(f, trak_start, b"trak")
     _fixup_box_size(f, moov_start, b"moov")
 
-    # Fix up stco with correct mdat offset
+    # Fix up co64 with correct mdat offset
     mdat_offset = f.tell() + 8  # +8 for mdat header
-    f.seek(stco_pos + 16)  # +12 for box header + version/flags, +4 for entry_count
-    f.write(struct.pack(">I", mdat_offset))
+    f.seek(co64_pos + 16)  # +12 for fullbox header, +4 for entry_count
+    f.write(struct.pack(">Q", mdat_offset))
     f.seek(0, 2)  # Back to end
 
 
@@ -854,22 +870,24 @@ def _write_mdat(f, data: bytes):
 
 
 def _extract_stsd_content(data: bytes) -> Optional[bytes]:
-    """Extract full stsd box content from moov box (supports any codec)."""
-    # Find stsd box in the data
-    idx = data.find(b"stsd")
-    if idx < 4:
+    """Extract full stsd box content from moov box (supports any codec).
+
+    Walks the box tree (moov/trak/mdia/minf/stbl/stsd) rather than scanning
+    for the magic bytes, so a fourcc inside compressed payload data is never
+    mistaken for a box header.
+    """
+    stsd_content = find_box(
+        data,
+        ["moov", "trak", "mdia", "minf", "stbl", "stsd"],
+    )
+    if stsd_content is None:
         return None
 
-    # Get stsd box size
-    size = struct.unpack(">I", data[idx - 4 : idx])[0]
-    if size < 16 or size > 10000:  # Reasonable stsd size range
+    if len(stsd_content) < 8:
         return None
-
-    # Return stsd content (after box header = size + type)
-    raw_content = data[idx + 4 : idx - 4 + size]
 
     # Clean the stsd content to remove encryption metadata
-    return _clean_stsd_content(raw_content)
+    return _clean_stsd_content(stsd_content)
 
 
 def _clean_stsd_content(stsd_content: bytes) -> bytes:
@@ -925,6 +943,47 @@ def _clean_stsd_content(stsd_content: bytes) -> bytes:
     return result
 
 
+_AUDIO_SAMPLE_ENTRY_TYPES = {
+    b"enca",
+    b"mp4a",
+    b"alac",
+    b"ac-3",
+    b"ec-3",
+    b"ac-4",
+    b"opus",
+    b"fLaC",
+    b"lpcm",
+    b"samr",
+    b"sawb",
+    b"sowt",
+}
+
+_VIDEO_SAMPLE_ENTRY_TYPES = {
+    b"encv",
+    b"avc1",
+    b"avc3",
+    b"hvc1",
+    b"hev1",
+    b"vpc1",
+    b"vp08",
+    b"vp09",
+    b"av01",
+    b"mp4v",
+}
+
+
+def _sample_entry_child_offset(entry_type: bytes) -> int:
+    """Return the byte offset where child boxes begin inside a sample entry.
+
+    Audio sample entries carry a 36-byte fixed header, video entries a 78-byte
+    header. Applying the wrong offset misreads the child boxes (and the rebuilt
+    file), so derive it from the entry type instead of hardcoding audio's.
+    """
+    if entry_type in _VIDEO_SAMPLE_ENTRY_TYPES:
+        return 78
+    return 36
+
+
 def _clean_encrypted_sample_entry(entry_data: bytes) -> bytes:
     """
     Clean an encrypted sample entry (enca, encv, etc.).
@@ -943,7 +1002,7 @@ def _clean_encrypted_sample_entry(entry_data: bytes) -> bytes:
     2. Replace 'enca' with original format
     3. Remove sinf box
     """
-    if len(entry_data) < 36:  # Minimum audio sample entry size
+    if len(entry_data) < 36 and b"encv" not in entry_data[:8]:
         return entry_data
 
     entry_size = struct.unpack(">I", entry_data[:4])[0]
@@ -960,15 +1019,18 @@ def _clean_encrypted_sample_entry(entry_data: bytes) -> bytes:
         else:
             original_format = entry_type  # Keep as-is
 
-    # Audio sample entry structure:
-    # - size (4) + type (4) + reserved (6) + data_ref_index (2) + audio_data (20) = 36 bytes
-    # - Then child boxes start at offset 36
+    # Audio/video sample entry structure:
+    # - size (4) + type (4) + reserved (6) + data_ref_index (2) + codec data
+    #   = 36 bytes for audio entries, 78 bytes for video entries
+    # - Then child boxes start after the fixed header
+    child_offset = _sample_entry_child_offset(entry_type)
+    if len(entry_data) < child_offset:
+        return entry_data
 
     # Copy the fixed header part, replacing the type
-    new_entry = entry_data[:4] + original_format + entry_data[8:36]
+    new_entry = entry_data[:4] + original_format + entry_data[8:child_offset]
 
     # Process child boxes, removing sinf
-    child_offset = 36
     while child_offset + 8 <= len(entry_data):
         child_size = struct.unpack(">I", entry_data[child_offset : child_offset + 4])[0]
         child_type = entry_data[child_offset + 4 : child_offset + 8]
@@ -1027,7 +1089,9 @@ def _remove_sinf_from_entry(entry_data: bytes) -> bytes:
     Remove sinf box from a sample entry (if present).
     Used for non-encrypted entries that might still have protection info.
     """
-    if len(entry_data) < 36:
+    entry_type = entry_data[4:8] if len(entry_data) >= 8 else b""
+    child_offset = _sample_entry_child_offset(entry_type)
+    if len(entry_data) < child_offset:
         return entry_data
 
     # Check if sinf exists
@@ -1035,9 +1099,8 @@ def _remove_sinf_from_entry(entry_data: bytes) -> bytes:
         return entry_data
 
     # Rebuild entry without sinf
-    new_entry = entry_data[:36]  # Keep header and audio data
+    new_entry = entry_data[:child_offset]  # Keep header and codec data
 
-    child_offset = 36
     while child_offset + 8 <= len(entry_data):
         child_size = struct.unpack(">I", entry_data[child_offset : child_offset + 4])[0]
         child_type = entry_data[child_offset + 4 : child_offset + 8]
@@ -1058,43 +1121,48 @@ def _remove_sinf_from_entry(entry_data: bytes) -> bytes:
 
 
 def _extract_alac_config(data: bytes) -> Optional[bytes]:
-    """Extract ALAC configuration from moov/stsd box (for backwards compatibility)."""
-    # Simple search for 'alac' box in data
-    idx = data.find(b"alac")
-    if idx < 4:
+    """Extract ALAC configuration from moov/stsd box via box-tree walking."""
+    alac_box = find_box(
+        data,
+        ["moov", "trak", "mdia", "minf", "stbl", "stsd", "alac"],
+    )
+    if alac_box is None or not alac_box:
         return None
-
-    # Check if it's inside stsd (look for full structure)
-    # The 'alac' cookie box follows the sample entry
-    alac_idx = idx
-    while alac_idx < len(data) - 100:
-        if data[alac_idx : alac_idx + 4] == b"alac":
-            size = struct.unpack(">I", data[alac_idx - 4 : alac_idx])[0]
-            if 20 < size < 100:  # Reasonable ALAC config size
-                return data[alac_idx + 4 : alac_idx - 4 + size]
-        alac_idx += 1
-        if alac_idx > idx + 200:
-            break
-    return None
+    return alac_box
 
 
 def _extract_timescale(data: bytes) -> int:
-    """Extract timescale from moov/mvhd or mdhd box."""
-    # Look for mdhd box (media header has the audio timescale)
-    idx = data.find(b"mdhd")
-    if idx > 0 and idx + 24 < len(data):
-        # mdhd: version(1) + flags(3) + creation(4) + modification(4) + timescale(4)
-        return struct.unpack(">I", data[idx + 16 : idx + 20])[0]
-    return 44100  # Default
+    """Extract the audio track's timescale from the mdhd box via box walking."""
+    mdhd = find_box(data, ["moov", "trak", "mdia", "mdhd"])
+    if mdhd is None or len(mdhd) < 16:
+        return 44100  # Default
+    # mdhd FullBox: version(1) + flags(3) + creation(4) + modification(4) + timescale(4)
+    # v0 timestamps are 32-bit; timescale sits at content offset 12.
+    if mdhd[0] != 0:
+        return 44100
+    return struct.unpack(">I", mdhd[12:16])[0]
 
 
 def _extract_timestamps_from_box(data: bytes, box_type: bytes) -> tuple[int, int]:
-    """Extract creation_time and modification_time from a FullBox (mvhd, tkhd, mdhd)."""
-    idx = data.find(box_type)
-    if idx > 0 and idx + 16 < len(data):
-        creation_time = struct.unpack(">I", data[idx + 8 : idx + 12])[0]
-        modification_time = struct.unpack(">I", data[idx + 12 : idx + 16])[0]
-        return creation_time, modification_time
+    """Extract creation_time and modification_time from a FullBox (mvhd, tkhd, mdhd).
+
+    Walks the box tree to the named box (trying the common paths) rather than
+    scanning for the fourcc in the raw bytes.
+    """
+    box_type_str = box_type.decode("ascii", errors="replace")
+    for path in (
+        ["moov", box_type_str],
+        ["moov", "trak", box_type_str],
+        ["moov", "trak", "mdia", box_type_str],
+    ):
+        box_data = find_box(data, path)
+        if box_data is None or len(box_data) < 12:
+            continue
+        # FullBox: version(1) + flags(3) + creation_time(4) + modification_time(4)
+        return (
+            struct.unpack(">I", box_data[4:8])[0],
+            struct.unpack(">I", box_data[8:12])[0],
+        )
     return 0, 0
 
 

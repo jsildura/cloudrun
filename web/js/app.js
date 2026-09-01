@@ -14,6 +14,7 @@
     const urlForm = $('#url-form');
     const urlInput = $('#url-input');
     const btnSubmit = $('#btn-submit');
+    const btnPaste = $('#btn-paste');
     const btnSettings = $('#btn-settings');
     const btnInfo = $('#btn-info');
     const authBadge = $('#auth-badge');
@@ -93,8 +94,12 @@
             _previewAudio = null;
         }
         if (_previewActiveBtn) {
-            _previewActiveBtn.querySelector('.icon-play').style.display = '';
-            _previewActiveBtn.querySelector('.icon-eq').style.display = 'none';
+            const playIcon = _previewActiveBtn.querySelector('.icon-play');
+            const eqIcon = _previewActiveBtn.querySelector('.icon-eq');
+            const pauseIcon = _previewActiveBtn.querySelector('.icon-pause');
+            if (playIcon) playIcon.style.display = '';
+            if (eqIcon) eqIcon.style.display = 'none';
+            if (pauseIcon) pauseIcon.style.display = 'none';
             _previewActiveBtn.closest('.preview-track-item')?.classList.remove('playing');
             _previewActiveBtn = null;
         }
@@ -116,8 +121,12 @@
         // Start new preview
         _previewAudio = new Audio(url);
         _previewActiveBtn = btn;
-        btn.querySelector('.icon-play').style.display = 'none';
-        btn.querySelector('.icon-eq').style.display = '';
+        const playIcon = btn.querySelector('.icon-play');
+        const eqIcon = btn.querySelector('.icon-eq');
+        const pauseIcon = btn.querySelector('.icon-pause');
+        if (playIcon) playIcon.style.display = 'none';
+        if (eqIcon) eqIcon.style.display = '';
+        if (pauseIcon) pauseIcon.style.display = 'none';
         btn.closest('.preview-track-item')?.classList.add('playing');
 
         _previewAudio.play().catch(() => stopPreviewAudio());
@@ -126,12 +135,25 @@
 
     // Delegate click on preview track items (entire row is clickable)
     document.addEventListener('click', (e) => {
+        if (e.target.closest('.preview-track-checkbox') || e.target.closest('.toolbar-icon-btn')) {
+            return;
+        }
         const trackItem = e.target.closest('.preview-track-item.has-preview');
         if (!trackItem) return;
         const btn = trackItem.querySelector('.preview-play-btn');
         if (btn) {
             e.stopPropagation();
             togglePreviewAudio(btn);
+        }
+    });
+
+    // Delegate checkbox click in edit mode (single listener, prevents duplicate attachments)
+    document.addEventListener('click', (e) => {
+        const checkbox = e.target.closest('.preview-track-checkbox');
+        if (checkbox && _isEditMode) {
+            e.stopPropagation();
+            _setCheckbox(checkbox, checkbox.dataset.checked !== 'true');
+            _updateEditCount();
         }
     });
 
@@ -590,7 +612,7 @@
         return `
             <div class="track-item">
                 <div class="track-cover">
-                    ${track.cover_url ? `<img src="${track.cover_url}" alt="" loading="lazy">` : ''}
+                    ${track.cover_url ? `<img src="${escapeHtml(track.cover_url)}" alt="" loading="lazy">` : ''}
                 </div>
                 <div class="track-info">
                     <div class="track-title">${escapeHtml(track.title)}</div>
@@ -706,43 +728,6 @@
     }
 
 
-    // ── Codec display label helper ─────────────────────────────────────────
-    function getCodecLabel(codecValue) {
-        const labels = {
-            'aac-legacy': 'AAC 256kbps',
-            'aac-he-legacy': 'AAC-HE 64kbps',
-            'aac': 'AAC 256kbps 48kHz',
-            'aac-he': 'AAC-HE 64kbps 48kHz',
-            'aac-binaural': 'AAC Binaural',
-            'aac-downmix': 'AAC Downmix',
-            'atmos': 'Dolby Atmos',
-            'ac3': 'AC3 640kbps',
-            'alac': 'ALAC Lossless',
-        };
-        return labels[codecValue] || codecValue || 'AAC 256kbps';
-    }
-
-    // ── History rendering ──────────────────────────────────────────────────
-    function renderHistoryList(items) {
-        if (!historyList) return;
-        if (!items || items.length === 0) {
-            historyList.innerHTML = '<p class="history-empty">No downloads yet.</p>';
-            return;
-        }
-        historyList.innerHTML = items.map(item => `
-            <div class="history-item">
-                <div class="history-item-info">
-                    <div class="history-item-title">${escapeHtml(item.title || 'Unknown')}</div>
-                    <div class="history-item-artist">${escapeHtml(item.artist || 'Unknown')}</div>
-                    <div class="history-item-badges">
-                        <span class="history-badge type-badge">${escapeHtml(item.type || 'Track')}</span>
-                        <span class="history-badge codec-badge">${escapeHtml(item.codec || '')}</span>
-                    </div>
-                </div>
-                <span class="history-item-date">${escapeHtml(item.date || '')}</span>
-            </div>
-        `).join('');
-    }
 
     function attachRetryAllHandler(card, jobId) {
         const retryAllBtn = card.querySelector('.btn-retry-all');
@@ -781,7 +766,7 @@
                 try {
                     const token = AuthStorage.getToken();
                     const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-                    const resp = await fetch(`/api/save/${jobId}/${trackIndex}`, { headers });
+                    const resp = await fetch(`${api.baseUrl}/api/save/${jobId}/${trackIndex}`, { headers });
                     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
                     const filename = resp.headers.get('X-Filename') || `track_${trackIndex}`;
@@ -824,7 +809,7 @@
             try {
                 const token = AuthStorage.getToken();
                 const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-                const resp = await fetch(`/api/save/${jobId}/${trackIndex}/lyrics`, { headers });
+                const resp = await fetch(`${api.baseUrl}/api/save/${jobId}/${trackIndex}/lyrics`, { headers });
                 if (!resp.ok) return; // No lyrics file — silently skip
 
                 const filename = resp.headers.get('X-Filename') || `lyrics_${trackIndex}`;
@@ -849,14 +834,13 @@
      */
     function fetchCoverBlob(jobId, trackIndex) {
         if (!_coverBlobPromises[jobId]) _coverBlobPromises[jobId] = {};
-        // Use trackIndex as key but deduplicate by filename later in prepareSaveLink
-        if (_coverBlobPromises[jobId][trackIndex]) return _coverBlobPromises[jobId][trackIndex];
+        if (_coverBlobPromises[jobId]['_active_cover']) return _coverBlobPromises[jobId]['_active_cover'];
 
         const promise = (async () => {
             try {
                 const token = AuthStorage.getToken();
                 const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-                const resp = await fetch(`/api/save/${jobId}/${trackIndex}/cover`, { headers });
+                const resp = await fetch(`${api.baseUrl}/api/save/${jobId}/${trackIndex}/cover`, { headers });
                 if (!resp.ok) return; // No cover file — silently skip
 
                 const filename = resp.headers.get('X-Filename') || `Cover`;
@@ -874,7 +858,7 @@
             }
         })();
 
-        _coverBlobPromises[jobId][trackIndex] = promise;
+        _coverBlobPromises[jobId]['_active_cover'] = promise;
         return promise;
     }
 
@@ -976,21 +960,19 @@
         if (totalFetches > 1) {
             // Track progress as each blob resolves
             let fetchedCount = 0;
-            updateFetchStatus(`Processing ${fetchedCount}/${totalTracks} tracks\u2026`, 0);
+            updateFetchStatus(`Processing 0/${totalFetches} files\u2026`, 0);
 
             const trackedPromises = allPromises.map(p =>
                 p.then(() => {
                     fetchedCount++;
                     const pct = Math.round((fetchedCount / totalFetches) * 100);
-                    // Show track count for audio, but total items count for the pct
-                    const tracksFetched = Math.min(fetchedCount, totalTracks);
-                    updateFetchStatus(`Processing ${tracksFetched}/${totalTracks} tracks\u2026`, pct);
+                    updateFetchStatus(`Processing ${fetchedCount}/${totalFetches} files\u2026`, pct);
                 })
             );
             await Promise.all(trackedPromises);
         } else {
             // Single file or no files — just wait without granular progress
-            if (totalFetches === 1) updateFetchStatus('Processing track\u2026', 50);
+            if (totalFetches === 1) updateFetchStatus('Processing file\u2026', 50);
             await Promise.all(allPromises);
         }
 
@@ -1045,11 +1027,12 @@
             finalBlob = allEntries[0].blob;
             finalFilename = allEntries[0].filename;
         } else {
-            // ── Multi-file — compress to ZIP in background ──
+            // ── Multi-file — package to ZIP in background ──
             if (typeof JSZip === 'undefined') {
-                // Fallback: trigger individual save dialogs for each file
+                // Fallback: trigger sequential save dialogs for each file
                 for (const { blob, filename } of allEntries) {
                     triggerSave(blob, filename);
+                    await new Promise(r => setTimeout(r, 300));
                 }
                 updateFetchStatus('Saved', -1);
                 if (statusEl) statusEl.className = 'job-status done';
@@ -1063,7 +1046,7 @@
                 return;
             }
 
-            updateFetchStatus('Compressing 0%', 0);
+            updateFetchStatus('Packaging 0%', 0);
 
             const zip = new JSZip();
 
@@ -1099,6 +1082,23 @@
             // ── Sequential track-by-track ZIP packaging with visible progress ──
             const trackIndices = Object.keys(jobBlobs).map(Number).sort((a, b) => a - b);
             const lyricsMap = _lyricsBlobs[job.job_id] || {};
+            const usedZipPaths = new Set();
+
+            function _getUniqueZipPath(p) {
+                let uniquePath = p;
+                let counter = 1;
+                while (usedZipPaths.has(uniquePath)) {
+                    const dotIdx = p.lastIndexOf('.');
+                    if (dotIdx > 0) {
+                        uniquePath = `${p.substring(0, dotIdx)} (${counter})${p.substring(dotIdx)}`;
+                    } else {
+                        uniquePath = `${p} (${counter})`;
+                    }
+                    counter++;
+                }
+                usedZipPaths.add(uniquePath);
+                return uniquePath;
+            }
 
             for (let t = 0; t < trackIndices.length; t++) {
                 const trackIdx = trackIndices[t];
@@ -1116,7 +1116,7 @@
                     const fname = _filenameOf(zipPath);
                     zipPath = `${folder}${discLabel} ${discNum}/${fname}`;
                 }
-                zip.file(zipPath, entry.blob);
+                zip.file(_getUniqueZipPath(zipPath), entry.blob);
 
                 // Add matching lyrics file for this track
                 if (lyricsMap[trackIdx]) {
@@ -1127,7 +1127,7 @@
                         const discNum = track.disc_number || 1;
                         folder = `${folder}${discLabel} ${discNum}/`;
                     }
-                    zip.file(folder + lEntry.filename, lEntry.blob);
+                    zip.file(_getUniqueZipPath(folder + lEntry.filename), lEntry.blob);
                 }
 
                 // Yield to the browser so the DOM repaints the progress text
@@ -1157,7 +1157,7 @@
                 { type: 'blob', compression: 'STORE' },
                 (meta) => {
                     const pct = Math.round(meta.percent);
-                    updateFetchStatus(`Compressing ${pct}%`, pct);
+                    updateFetchStatus(`Packaging ${pct}%`, pct);
                 }
             );
 
@@ -1252,9 +1252,9 @@
     }
 
     function escapeHtml(str) {
-        if (!str) return '';
+        if (str === null || str === undefined) return '';
         const div = document.createElement('div');
-        div.textContent = str;
+        div.textContent = String(str);
         return div.innerHTML;
     }
 
@@ -1623,14 +1623,6 @@
             el.classList.remove('track-dimmed');
         });
 
-        // Listen for click toggles to update the count
-        checkboxes.forEach(cb => {
-            cb.addEventListener('click', () => {
-                _setCheckbox(cb, cb.dataset.checked !== 'true');
-                _updateEditCount();
-            });
-        });
-
         _renderToolbarEditMode();
     }
 
@@ -1872,7 +1864,6 @@
     });
 
     // Paste button — read clipboard and validate Apple Music URL
-    const btnPaste = $('#btn-paste');
     if (btnPaste) {
         btnPaste.addEventListener('click', async () => {
             try {
@@ -1935,9 +1926,30 @@
         const filename = `artwork.${ext}`;
 
         if (type === 'video/mp4' && url.endsWith('.m3u8')) {
-            // For animated artwork, we need the backend to convert it to mp4 (defaulting to 720p to save space)
-            window.location.href = `/api/convert-m3u8?url=${encodeURIComponent(url)}&quality=720`;
-            toast('Converting and downloading artwork...', 'success');
+            toast('Converting and downloading artwork...', 'info');
+            try {
+                const token = AuthStorage.getToken();
+                const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+                const convertUrl = `${api.baseUrl}/api/convert-m3u8?url=${encodeURIComponent(url)}&quality=720`;
+                const resp = await fetch(convertUrl, { headers });
+                if (!resp.ok) {
+                    const errJson = await resp.json().catch(() => ({ detail: 'Failed to convert animated artwork' }));
+                    throw new Error(errJson.detail || 'Failed to convert animated artwork');
+                }
+                const blob = await resp.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+                toast('Artwork saved', 'success');
+            } catch (err) {
+                console.error('Failed to convert artwork:', err);
+                toast(err.message || 'Failed to convert artwork', 'error');
+            }
             return;
         }
 
@@ -2286,20 +2298,47 @@
     }
 
     async function fetchSystemStats() {
-        const s = await api.getSystemStats();
-        if (!s) return;
+        if (document.hidden) return;
+        try {
+            const s = await api.getSystemStats();
+            if (!s) return;
 
-        statCpu.textContent = `CPU: ${Math.round(s.cpu_percent)}%`;
-        statRam.textContent = `RAM: ${s.ram_used_mb}/${s.ram_total_mb} MB`;
-        statSwap.textContent = `SWAP: ${s.swap_used_mb}/${s.swap_total_mb} MB`;
+            statCpu.textContent = `CPU: ${Math.round(s.cpu_percent)}%`;
+            statRam.textContent = `RAM: ${s.ram_used_mb}/${s.ram_total_mb} MB`;
+            statSwap.textContent = `SWAP: ${s.swap_used_mb}/${s.swap_total_mb} MB`;
 
-        applyStatClass(statCpu, s.cpu_percent);
-        applyStatClass(statRam, s.ram_percent);
-        applyStatClass(statSwap, s.swap_percent);
+            applyStatClass(statCpu, s.cpu_percent);
+            applyStatClass(statRam, s.ram_percent);
+            applyStatClass(statSwap, s.swap_percent);
+        } catch (e) {
+            // Silently ignore failures during offline / restart
+        }
     }
 
     // Poll every 3 seconds
     setInterval(fetchSystemStats, 3000);
+
+    // Delegated listener for track retry buttons across all job cards
+    if (queueList) {
+        queueList.addEventListener('click', async (e) => {
+            const retryBtn = e.target.closest('.track-retry-btn');
+            if (retryBtn) {
+                e.stopPropagation();
+                const jobId = retryBtn.dataset.jobId;
+                const trackIndex = parseInt(retryBtn.dataset.trackIndex, 10);
+                retryBtn.disabled = true;
+                retryBtn.textContent = '…';
+                try {
+                    await api.retryTrack(jobId, trackIndex);
+                    toast('Retrying track…', 'info');
+                } catch (err) {
+                    toast('Retry failed: ' + err.message, 'error');
+                    retryBtn.disabled = false;
+                    retryBtn.textContent = '↻';
+                }
+            }
+        });
+    }
 
 
     // ── Init ──────────────────────────────────────────────────────────────

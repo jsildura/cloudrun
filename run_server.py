@@ -26,10 +26,15 @@ def _patched_setup(self):
 Config.setup_event_loop = _patched_setup
 
 
+import os
+
 if __name__ == "__main__":
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "8000"))
+    reload = os.environ.get("RELOAD", "false").lower() in ("true", "1")
     uvicorn.run(
         "server.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
+        host=host,
+        port=port,
+        reload=reload,
     )

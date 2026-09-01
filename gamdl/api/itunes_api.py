@@ -24,10 +24,8 @@ class ItunesApi:
         self._initialize_client()
 
     def _initialize_storefront_id(self) -> None:
-        try:
-            self.storefront_id = STOREFRONT_IDS[self.storefront.upper()]
-        except KeyError:
-            raise Exception(f"No storefront id for {self.storefront}")
+        key = (self.storefront or "us").split("-")[0].upper()
+        self.storefront_id = STOREFRONT_IDS.get(key, STOREFRONT_IDS.get("US", "143441"))
 
     def _initialize_client(self) -> None:
         self.client = httpx.AsyncClient(

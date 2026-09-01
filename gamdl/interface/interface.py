@@ -27,6 +27,9 @@ class AppleMusicInterface:
     ) -> None:
         self.apple_music_api = apple_music_api
         self.itunes_api = itunes_api
+        self._cover_bytes_cache: dict[str, bytes | None] = {}
+        self._media_date_cache: dict[str, datetime.datetime | None] = {}
+        self._cover_ext_cache: dict[tuple[str, CoverFormat], str | None] = {}
 
     @staticmethod
     def get_media_id_of_library_media(library_media_metadata: dict) -> str:
@@ -43,9 +46,8 @@ class AppleMusicInterface:
         track_id: str,
         cdm: Cdm,
     ) -> DecryptionKey:
+        cdm_session = cdm.open()
         try:
-            cdm_session = cdm.open()
-
             pssh_obj = PSSH(track_uri.split(",")[-1])
 
             challenge = base64.b64encode(
@@ -118,47 +120,64 @@ class AppleMusicInterface:
         logger.debug(f"Cover URL: {url}")
         return url
 
-    @alru_cache()
     async def get_cover_file_extension(
         self,
         cover_url: str,
         cover_format: CoverFormat,
     ) -> str | None:
+        cache_key = (cover_url, cover_format)
+        if cache_key in self._cover_ext_cache:
+            return self._cover_ext_cache[cache_key]
+
         if cover_format != CoverFormat.RAW:
-            return f".{cover_format.value}"
+            ext = f".{cover_format.value}"
+            self._cover_ext_cache[cache_key] = ext
+            return ext
 
         cover_bytes = await self.get_cover_bytes(cover_url)
         if cover_bytes is None:
+            self._cover_ext_cache[cache_key] = None
             return None
 
         image_obj = Image.open(BytesIO(cover_bytes))
         image_format = image_obj.format.lower()
-        return IMAGE_FILE_EXTENSION_MAP.get(
+        ext = IMAGE_FILE_EXTENSION_MAP.get(
             image_format,
             f".{image_format.lower()}",
         )
+        self._cover_ext_cache[cache_key] = ext
+        return ext
 
-    @alru_cache()
     async def get_cover_bytes(self, cover_url: str) -> bytes | None:
+        if cover_url in self._cover_bytes_cache:
+            return self._cover_bytes_cache[cover_url]
+
         response = await get_response(cover_url, {200, 404})
         if response.status_code == 200:
-            return response.content
+            content = response.content
+            self._cover_bytes_cache[cover_url] = content
+            return content
+
+        self._cover_bytes_cache[cover_url] = None
         return None
 
-    @alru_cache()
     async def get_media_date(
         self,
         media_id: str,
     ) -> datetime.datetime | None:
+        if media_id in self._media_date_cache:
+            return self._media_date_cache[media_id]
+
         lookup_result = await self.itunes_api.get_lookup_result(media_id)
         if not lookup_result["results"]:
+            self._media_date_cache[media_id] = None
             return None
 
         release_date = lookup_result["results"][0].get("releaseDate")
         if not release_date:
+            self._media_date_cache[media_id] = None
             return None
 
-        parsed_date = self.parse_date(release_date)
-        logger.debug(f"Parsed media date: {parsed_date}")
-
-        return parsed_date
+        dt = self.parse_date(release_date)
+        self._media_date_cache[media_id] = dt
+        return dt

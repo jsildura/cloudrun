@@ -102,7 +102,24 @@ class AppleMusicBaseDownloader:
         self,
         media_metadata: dict,
     ) -> bool:
-        return bool(media_metadata["attributes"].get("playParams"))
+        attrs = media_metadata.get("attributes", {}) if media_metadata else {}
+        play_params = attrs.get("playParams") or attrs.get("playparams")
+        return bool(play_params)
+
+    @staticmethod
+    def _sanitize_tags_dict(tags: dict) -> dict:
+        clean = {}
+        for k, v in tags.items():
+            if isinstance(v, str):
+                clean[k] = v.replace("\x00", "")
+            elif isinstance(v, list):
+                clean[k] = [
+                    item.replace("\x00", "") if isinstance(item, str) else item
+                    for item in v
+                ]
+            else:
+                clean[k] = v
+        return clean
 
     def get_playlist_tags(
         self,
@@ -332,9 +349,10 @@ class AppleMusicBaseDownloader:
                         ),
                     )
                 ]
-            mp4.update(tags)
+            if tags:
+                mp4.update(self._sanitize_tags_dict(tags))
             if extra_tags:
-                mp4.update(extra_tags)
+                mp4.update(self._sanitize_tags_dict(extra_tags))
 
         mp4.save()
 

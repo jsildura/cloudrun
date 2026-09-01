@@ -91,8 +91,9 @@ class AppleMusicSongInterface(AppleMusicInterface):
             unsynced_lyrics.append(stanza)
 
             for p in div.iter("{http://www.w3.org/ns/ttml}p"):
-                if p.text is not None:
-                    stanza.append(p.text)
+                text = "".join(p.itertext()).strip()
+                if text:
+                    stanza.append(text)
 
                 if p.attrib.get("begin"):
                     if synced_lyrics_format == SyncedLyricsFormat.LRC:
@@ -113,7 +114,7 @@ class AppleMusicSongInterface(AppleMusicInterface):
         return Lyrics(
             synced="\n".join(synced_lyrics + ["\n"]) if synced_lyrics else None,
             unsynced=(
-                "\n\n".join(["\n".join(lyric_group) for lyric_group in unsynced_lyrics])
+                "\n\n".join(["\n".join(lyric_group) for lyric_group in unsynced_lyrics if lyric_group])
                 if unsynced_lyrics
                 else None
             ),
@@ -122,55 +123,68 @@ class AppleMusicSongInterface(AppleMusicInterface):
     def _parse_ttml_timestamp(
         self,
         timestamp_ttml: str,
-    ) -> datetime.datetime:
-        mins_secs_ms = re.findall(r"\d+", timestamp_ttml)
-        ms, secs, mins = 0, 0, 0
+    ) -> datetime.timedelta:
+        if not timestamp_ttml:
+            return datetime.timedelta()
 
-        if len(mins_secs_ms) == 2 and ":" in timestamp_ttml:
-            secs, mins = int(mins_secs_ms[-1]), int(mins_secs_ms[-2])
-
-        elif len(mins_secs_ms) == 1:
-            ms = int(mins_secs_ms[-1])
-
-        else:
-            secs = float(f"{mins_secs_ms[-2]}.{mins_secs_ms[-1]}")
-            if len(mins_secs_ms) > 2:
-                mins = int(mins_secs_ms[-3])
-
-        return datetime.datetime.fromtimestamp(
-            (mins * 60) + secs + (ms / 1000),
-            tz=datetime.timezone.utc,
-        )
+        parts = timestamp_ttml.strip().split(":")
+        try:
+            if len(parts) == 3:
+                hours = int(parts[0])
+                mins = int(parts[1])
+                secs = float(parts[2])
+            elif len(parts) == 2:
+                hours = 0
+                mins = int(parts[0])
+                secs = float(parts[1])
+            else:
+                hours = 0
+                mins = 0
+                secs = float(parts[0])
+            return datetime.timedelta(hours=hours, minutes=mins, seconds=secs)
+        except Exception:
+            nums = re.findall(r"\d+", timestamp_ttml)
+            if len(nums) >= 4:
+                return datetime.timedelta(hours=int(nums[-4]), minutes=int(nums[-3]), seconds=int(nums[-2]), milliseconds=int(nums[-1]))
+            elif len(nums) == 3:
+                return datetime.timedelta(minutes=int(nums[-3]), seconds=int(nums[-2]), milliseconds=int(nums[-1]))
+            elif len(nums) == 2:
+                return datetime.timedelta(seconds=int(nums[-2]), milliseconds=int(nums[-1]))
+            return datetime.timedelta()
 
     def _get_lyrics_line_srt(self, index: int, element: ElementTree.Element) -> str:
         timestamp_begin_ttml = element.attrib.get("begin")
         timestamp_end_ttml = element.attrib.get("end")
-        text = element.text
+        text = "".join(element.itertext()).strip()
 
-        timestamp_begin = self._parse_ttml_timestamp(timestamp_begin_ttml)
-        timestamp_end = self._parse_ttml_timestamp(timestamp_end_ttml)
+        td_begin = self._parse_ttml_timestamp(timestamp_begin_ttml)
+        td_end = self._parse_ttml_timestamp(timestamp_end_ttml)
+
+        def format_srt_time(td: datetime.timedelta) -> str:
+            total_seconds = int(td.total_seconds())
+            hours = total_seconds // 3600
+            mins = (total_seconds % 3600) // 60
+            secs = total_seconds % 60
+            millis = int(td.microseconds / 1000)
+            return f"{hours:02}:{mins:02}:{secs:02},{millis:03}"
 
         return (
             f"{index}\n"
-            f"{timestamp_begin.strftime('%H:%M:%S,%f')[:-3]} --> "
-            f"{timestamp_end.strftime('%H:%M:%S,%f')[:-3]}\n"
+            f"{format_srt_time(td_begin)} --> {format_srt_time(td_end)}\n"
             f"{text}\n"
         )
 
     def _get_lyrics_line_lrc(self, element: ElementTree.Element) -> str:
         timestamp_ttml = element.attrib.get("begin")
-        text = element.text
+        text = "".join(element.itertext()).strip()
 
-        timestamp = self._parse_ttml_timestamp(timestamp_ttml)
-        ms_new = timestamp.strftime("%f")[:-3]
+        td = self._parse_ttml_timestamp(timestamp_ttml)
+        total_seconds = int(td.total_seconds())
+        mins = total_seconds // 60
+        secs = total_seconds % 60
+        hundredths = int(td.microseconds / 10000)
 
-        if int(ms_new[-1]) >= 5:
-            ms = int(f"{int(ms_new[:2]) + 1}") * 10
-            timestamp += datetime.timedelta(milliseconds=ms) - datetime.timedelta(
-                microseconds=timestamp.microsecond
-            )
-
-        return f"[{timestamp.strftime('%M:%S.%f')[:-4]}]{text}"
+        return f"[{mins:02}:{secs:02}.{hundredths:02}]{text}"
 
     async def get_tags(
         self,
@@ -317,6 +331,7 @@ class AppleMusicSongInterface(AppleMusicInterface):
         stream_info_av = StreamInfoAv(
             audio_track=stream_info,
             file_format=MediaFileFormat.MP4 if is_mp4 else MediaFileFormat.M4A,
+            media_id=song_metadata.get("id"),
         )
         logger.debug(f"Stream info: {stream_info_av}")
 

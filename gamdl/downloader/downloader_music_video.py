@@ -44,6 +44,7 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
             "-add",
             input_path_video,
             output_path,
+            silent=self.silent,
         )
 
     async def remux_ffmpeg(
@@ -66,31 +67,16 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
             "-movflags",
             "+faststart",
             output_path,
+            silent=self.silent,
         )
 
     async def get_decryption_key(
         self,
-        stream_info: DecryptionKeyAv,
+        stream_info: StreamInfoAv,
     ) -> DecryptionKeyAv:
-        if stream_info.audio_track:
-            audio_decryption_key = await self.interface.get_decryption_key(
-                stream_info.audio_track.widevine_pssh,
-                self.cdm,
-            )
-        else:
-            audio_decryption_key = None
-
-        if stream_info.video_track:
-            video_decryption_key = await self.interface.get_decryption_key(
-                stream_info.video_track.widevine_pssh,
-                self.cdm,
-            )
-        else:
-            video_decryption_key = None
-
-        return DecryptionKeyAv(
-            audio_track=audio_decryption_key,
-            video_track=video_decryption_key,
+        return await self.interface.get_decryption_key(
+            stream_info,
+            self.cdm,
         )
 
     async def decrypt_mp4decrypt(
