@@ -6,7 +6,9 @@ FROM python:3.12-slim
 # ── Install system dependencies ──────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    gpac \
     wget \
+    tar \
     unzip \
     tini \
     && rm -rf /var/lib/apt/lists/*
@@ -18,6 +20,14 @@ RUN wget -qO /tmp/bento4.zip \
     && cp /tmp/bento4/*/bin/mp4decrypt /usr/local/bin/ \
     && chmod +x /usr/local/bin/mp4decrypt \
     && rm -rf /tmp/bento4*
+
+# ── Install N_m3u8DL-RE ───────────────────────────────────────────────────────
+RUN wget -qO /tmp/nm3u8dlre.tar.gz \
+    https://github.com/nilaoda/N_m3u8DL-RE/releases/download/v0.6.0-beta/N_m3u8DL-RE_v0.6.0-beta_linux-x64_20260629.tar.gz \
+    && tar -xzf /tmp/nm3u8dlre.tar.gz -C /tmp \
+    && (cp /tmp/N_m3u8DL-RE*/N_m3u8DL-RE /usr/local/bin/N_m3u8DL-RE 2>/dev/null || cp /tmp/N_m3u8DL-RE /usr/local/bin/N_m3u8DL-RE) \
+    && chmod +x /usr/local/bin/N_m3u8DL-RE \
+    && rm -rf /tmp/nm3u8dlre* /tmp/N_m3u8DL-RE*
 
 # ── Install yt-dlp ───────────────────────────────────────────────────────────
 RUN pip install --no-cache-dir yt-dlp
