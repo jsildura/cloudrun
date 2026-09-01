@@ -661,20 +661,13 @@ def do_wrapper_restart() -> dict:
     except Exception as e:
         return {"success": False, "message": f"Failed to start: {e}"}
 
-    # 4. Wait and then ping to verify it started
-    time.sleep(3)
+    # 4. Poll for wrapper readiness with a retry loop (up to 10 seconds)
+    for _ in range(20):
+        time.sleep(0.5)
+        if check_wrapper_healthy():
+            return {"success": True, "message": "Wrapper restarted successfully"}
 
-    cfg = _get_current_config()
-    url = cfg.wrapper_account_url
-    try:
-        req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            if resp.status == 200:
-                return {"success": True, "message": "Wrapper restarted successfully"}
-        return {"success": True, "message": "Wrapper restarted successfully"}
-    except Exception as e:
-        logger.warning("Wrapper ping failed after start: %s", e)
-        return {"success": False, "message": f"Wrapper failed to start: {e}"}
+    return {"success": False, "message": "Wrapper started but taking longer to initialize"}
 
 
 def check_wrapper_healthy() -> bool:

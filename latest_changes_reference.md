@@ -579,3 +579,8 @@ Systematically resolved, tested, and verified all 68 documented findings across 
 - **REST Endpoints & Headers (`server/api_routes.py`, `functions/api/[[path]].js`, `src/worker.js`):** Added `GET /api/download/latest` and `GET /api/download/latest/file` with `Content-Disposition`, `application/zip` MIME type, and `Access-Control-Expose-Headers` for edge proxies.
 - **Frontend Integration (`web/js/api.js`, `web/js/app.js`, `web/css/style.css`):** Attaches a direct Download button (`.btn-history-download`) strictly to the topmost (very first) item in **Recent Downloads**. Decodes filenames robustly with RFC-5987 UTF-8 support and fallback to metadata filename.
 - **Files modified:** `server/download_manager.py`, `server/api_routes.py`, `web/js/api.js`, `web/js/app.js`, `web/css/style.css`, `functions/api/[[path]].js`, `src/worker.js`, `latest_changes_reference.md`
+
+### 7. Fix: Wrapper Restart Healthcheck Readiness Polling
+- **Root cause:** `do_wrapper_restart` previously waited a static 3 seconds before performing a single `urllib.request` probe. On cloud environments (such as EC2), booting the QEMU/ARM64 Android rootfs takes 4 to 5 seconds to bind to ports 10020 and 30020, causing a transient `[Errno 111] Connection refused` toast error even though the process was in the middle of successful startup.
+- **Fix:** Replaced static 3-second sleep with a non-blocking 10-second readiness polling loop calling `check_wrapper_healthy()` every 500ms, returning as soon as both HTTP and TCP decrypt ports respond.
+- **Files modified:** `server/api_routes.py`, `latest_changes_reference.md`
