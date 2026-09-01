@@ -148,9 +148,14 @@ class GamdlApi {
 
     async downloadLatestFile() {
         const headers = {};
-        const token = AuthStorage.get();
+        const token = (typeof AuthStorage !== 'undefined' && typeof AuthStorage.getToken === 'function')
+            ? AuthStorage.getToken()
+            : null;
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        const res = await fetch(`${this.baseUrl}/api/download/latest/file`, { headers });
+        const url = token
+            ? `${this.baseUrl}/api/download/latest/file?token=${encodeURIComponent(token)}`
+            : `${this.baseUrl}/api/download/latest/file`;
+        const res = await fetch(url, { headers });
         if (!res.ok) throw new Error('File no longer available on server');
         const disposition = res.headers.get('content-disposition');
         let filename = 'download';
