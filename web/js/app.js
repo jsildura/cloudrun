@@ -909,16 +909,35 @@
         }
         historyList.innerHTML = items.map((item, idx) => {
             const hasLatestDirectDownload = (idx === 0) && _latestDownloadInfo && _latestDownloadInfo.available;
-            const downloadBtnHtml = hasLatestDirectDownload ? `
-                <button type="button" class="btn-history-download" id="btn-download-latest-history" title="Download ${escapeHtml(_latestDownloadInfo.filename || item.title)}">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="7 10 12 15 17 10"></polyline>
-                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                    </svg>
-                    <span>Download</span>
-                </button>
-            ` : '';
+            let downloadLinkHtml = '';
+            if (hasLatestDirectDownload) {
+                const token = (typeof AuthStorage !== 'undefined' && typeof AuthStorage.getToken === 'function')
+                    ? AuthStorage.getToken()
+                    : '';
+                const base = api.baseUrl.startsWith('http') ? api.baseUrl : window.location.origin;
+                const directUrl = token
+                    ? `${base}/api/download/latest/file?token=${encodeURIComponent(token)}`
+                    : `${base}/api/download/latest/file`;
+                const filename = _latestDownloadInfo.filename || `${item.title}.zip`;
+
+                downloadLinkHtml = `
+                <div class="history-item-link-group">
+                    <a href="${directUrl}" download="${escapeHtml(filename)}" class="btn-history-direct-link" title="${escapeHtml(directUrl)}" target="_blank" rel="noopener noreferrer">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                        </svg>
+                        <span>Direct Link</span>
+                    </a>
+                    <button type="button" class="btn-history-copy-link" id="btn-copy-latest-history-link" title="Copy direct download link" data-url="${escapeHtml(directUrl)}">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    </button>
+                </div>
+                `;
+            }
 
             return `
             <div class="history-item">
@@ -931,35 +950,26 @@
                     </div>
                 </div>
                 <div class="history-item-meta">
-                    ${downloadBtnHtml}
+                    ${downloadLinkHtml}
                     <span class="history-item-date">${escapeHtml(item.date)}</span>
                 </div>
             </div>
             `;
         }).join('');
 
-        const btnDownloadLatest = $('#btn-download-latest-history');
-        if (btnDownloadLatest) {
-            btnDownloadLatest.addEventListener('click', async (e) => {
+        const btnCopyLink = $('#btn-copy-latest-history-link');
+        if (btnCopyLink) {
+            btnCopyLink.addEventListener('click', async (e) => {
+                e.preventDefault();
                 e.stopPropagation();
-                btnDownloadLatest.disabled = true;
-                btnDownloadLatest.classList.add('loading');
-                const spanEl = btnDownloadLatest.querySelector('span');
-                const origText = spanEl ? spanEl.textContent : 'Download';
-                if (spanEl) spanEl.textContent = '…';
-                try {
-                    toast('Starting direct download…', 'info');
-                    const targetFilename = _latestDownloadInfo?.filename || 'download.zip';
-                    const { blob, filename } = await api.downloadLatestFile(targetFilename);
-                    const finalSaveName = filename || targetFilename;
-                    triggerSave(blob, finalSaveName);
-                    toast(`Saved ${finalSaveName}`, 'success');
-                } catch (err) {
-                    toast(err.message || 'Direct download failed', 'error');
-                } finally {
-                    btnDownloadLatest.disabled = false;
-                    btnDownloadLatest.classList.remove('loading');
-                    if (spanEl) spanEl.textContent = origText;
+                const url = btnCopyLink.dataset.url;
+                if (url) {
+                    try {
+                        await navigator.clipboard.writeText(url);
+                        toast('Direct link copied to clipboard!', 'success');
+                    } catch {
+                        toast('Failed to copy link', 'error');
+                    }
                 }
             });
         }

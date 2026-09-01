@@ -2450,36 +2450,55 @@ a:hover {
     flex-shrink: 0;
 }
 
-.btn-history-download {
+.history-item-link-group {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 3px 8px;
-    background: rgba(255, 43, 92, 0.12);
-    border: 1px solid rgba(255, 43, 92, 0.35);
+}
+
+.btn-history-direct-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    background: rgba(255, 43, 92, 0.14);
+    border: 1px solid rgba(255, 43, 92, 0.4);
     border-radius: var(--radius-sm);
     color: #ff375f;
     font-size: 0.68rem;
     font-weight: 500;
+    text-decoration: none;
     cursor: pointer;
     transition: all var(--transition-fast);
     white-space: nowrap;
 }
 
-.btn-history-download:hover {
+.btn-history-direct-link:hover {
     background: #ff375f;
     color: #fff;
     border-color: #ff375f;
-    box-shadow: 0 0 8px rgba(255, 43, 92, 0.4);
+    box-shadow: 0 0 10px rgba(255, 43, 92, 0.45);
+    text-decoration: none;
 }
 
-.btn-history-download:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+.btn-history-copy-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
 }
 
-.btn-history-download.loading svg {
-    animation: spin 1s linear infinite;
+.btn-history-copy-link:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.3);
 }
 
 .history-item-date {
