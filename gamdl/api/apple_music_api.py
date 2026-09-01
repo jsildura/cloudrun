@@ -176,6 +176,11 @@ class AppleMusicApi:
                 "media-user-token": self.media_user_token,
             }
         )
+        self.client.headers.update(
+            {
+                "media-user-token": self.media_user_token,
+            }
+        )
 
         try:
             self.account_info = await self.get_account_info()

@@ -219,6 +219,7 @@ async def connect_auth(request: Request) -> AuthStatus:
             storefront=result["storefront"],
         )
     except Exception as e:
+        logger.error("connect_auth error: %s", e)
         error_msg = str(e)
         if "429" in error_msg:
             raise HTTPException(
@@ -554,6 +555,11 @@ def do_wrapper_restart() -> dict:
     # 2. Check if the wrapper binary exists
     if not os.path.isfile(wrapper_bin):
         return {"success": False, "message": "Wrapper binary not found"}
+
+    try:
+        os.chmod(wrapper_bin, 0o755)
+    except Exception:
+        pass
 
     # 3. Start the wrapper in the background
     try:
