@@ -581,9 +581,13 @@ def do_wrapper_restart() -> dict:
     url = cfg.wrapper_account_url
     try:
         req = urllib.request.Request(url, method="GET")
-        urllib.request.urlopen(req, timeout=3)
-    except Exception:
-        return {"success": False, "message": "Wrapper successfully started, please refresh the page"}
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            if resp.status == 200:
+                return {"success": True, "message": "Wrapper restarted successfully"}
+        return {"success": True, "message": "Wrapper restarted successfully"}
+    except Exception as e:
+        logger.warning("Wrapper ping failed after start: %s", e)
+        return {"success": False, "message": f"Wrapper failed to start: {e}"}
 
 
 def check_wrapper_healthy() -> bool:
@@ -597,8 +601,10 @@ def check_wrapper_healthy() -> bool:
     try:
         req = urllib.request.Request(cfg.wrapper_account_url, method="GET")
         with urllib.request.urlopen(req, timeout=3) as resp:
-            if resp.status != 200:
-                return False
+            pass
+    except urllib.error.HTTPError:
+        # Any HTTP status code (200, 404, 400, etc.) means port 30020 is active and responding
+        pass
     except Exception:
         return False
 
