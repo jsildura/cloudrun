@@ -2478,3 +2478,96 @@ a:hover {
         margin: 0 6px;
     }
 }
+
+/* ── Subscription Helper & DRM Error Actions ──────────────────────────────── */
+.auth-subscription-hint {
+    margin-top: -6px;
+    margin-bottom: 16px;
+    padding: 8px 12px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.4;
+}
+
+.auth-subscription-hint a {
+    color: var(--primary, #fa2d48);
+    text-decoration: none;
+    font-weight: 500;
+    transition: opacity 0.2s ease;
+}
+
+.auth-subscription-hint a:hover {
+    text-decoration: underline;
+    opacity: 0.85;
+}
+
+.track-drm-error-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 3px;
+}
+
+.btn-sub-trial {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    background: rgba(250, 45, 72, 0.08);
+    border: 1px solid rgba(250, 45, 72, 0.25);
+    padding: 3px 8px;
+    border-radius: 4px;
+    text-decoration: none;
+    width: fit-content;
+    line-height: 1.3;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.btn-sub-trial strong {
+    color: var(--primary, #fa2d48);
+    font-weight: 600;
+}
+
+.btn-sub-trial:hover {
+    background: rgba(250, 45, 72, 0.16);
+    border-color: rgba(250, 45, 72, 0.5);
+}
+
+.status-drm-notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    background: rgba(250, 45, 72, 0.08);
+    border: 1px solid rgba(250, 45, 72, 0.25);
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+}
+
+.status-drm-notice .btn-sub-trial-pill {
+    color: #fff;
+    background: var(--primary, #fa2d48);
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: opacity 0.2s ease, transform 0.1s ease;
+}
+
+.status-drm-notice .btn-sub-trial-pill:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+}

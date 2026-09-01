@@ -215,13 +215,19 @@
         const container = $('#toast-container');
         const el = document.createElement('div');
         el.className = `toast ${type}`;
-        el.textContent = message;
+
+        if (type === 'error' && isSubscriptionOrDrmError(message)) {
+            el.innerHTML = `<div>${escapeHtml(message)}</div><div style="margin-top: 4px"><a href="https://music.apple.com/" target="_blank" rel="noopener" style="color: #fff; text-decoration: underline; font-weight: 600">Try Apple Music Free &#x2197;</a></div>`;
+        } else {
+            el.textContent = message;
+        }
+
         container.appendChild(el);
 
         setTimeout(() => {
             el.classList.add('out');
             setTimeout(() => el.remove(), 300);
-        }, 4000);
+        }, 5000);
     }
 
 
@@ -537,6 +543,24 @@
         }
     }
 
+    function isSubscriptionOrDrmError(msg) {
+        if (!msg || typeof msg !== 'string') return false;
+        const lower = msg.toLowerCase();
+        return (
+            lower.includes('subscription') ||
+            lower.includes('not subscribed') ||
+            lower.includes('decryption key') ||
+            lower.includes('decrypt') ||
+            lower.includes('drm') ||
+            lower.includes('fairplay') ||
+            lower.includes('widevine') ||
+            lower.includes('unauthorized') ||
+            lower.includes('403') ||
+            lower.includes('401') ||
+            lower.includes('not available in the selected codec')
+        );
+    }
+
     function renderTrack(track, jobId, trackIndex) {
         const stageClass = getStageClass(track.stage);
         const stageIcon = getStageIcon(track.stage);
@@ -545,11 +569,23 @@
             : isActive ? 50
                 : 0;
 
-
-
         const retryBtn = (track.stage === 'error')
             ? `<button class="track-retry-btn" data-job-id="${jobId}" data-track-index="${trackIndex}" title="Retry">↻</button>`
             : '';
+
+        let errorHtml = '';
+        if (track.error_message) {
+            if (isSubscriptionOrDrmError(track.error_message)) {
+                errorHtml = `
+                    <div class="track-drm-error-wrap">
+                        <div class="track-artist" style="color: var(--error)">${escapeHtml(track.error_message)}</div>
+                        <a href="https://music.apple.com/" target="_blank" rel="noopener" class="btn-sub-trial">This format requires an active subscription. <strong>Try Apple Music Free &#x2197;</strong></a>
+                    </div>
+                `;
+            } else {
+                errorHtml = `<div class="track-artist" style="color: var(--error)">${escapeHtml(track.error_message)}</div>`;
+            }
+        }
 
         return `
             <div class="track-item">
@@ -564,7 +600,7 @@
                             <div class="track-progress-bar" style="width: ${progressWidth}%"></div>
                         </div>
                     ` : ''}
-                    ${track.error_message ? `<div class="track-artist" style="color: var(--error)">${escapeHtml(track.error_message)}</div>` : ''}
+                    ${errorHtml}
                 </div>
                 ${retryBtn}
                 <div class="track-status-icon ${stageClass}" title="${track.stage}">
@@ -1796,9 +1832,20 @@
             ? '<span class="status-cancel-text" id="status-cancel-text">Cancel</span>'
             : '';
 
+        let drmNotice = '';
+        if (stage === 'error' && isSubscriptionOrDrmError(job.error_message)) {
+            drmNotice = `
+                <div class="status-drm-notice">
+                    <span>This format requires an active subscription.</span>
+                    <a href="https://music.apple.com/" target="_blank" rel="noopener" class="btn-sub-trial-pill">Try Apple Music Free &#x2197;</a>
+                </div>
+            `;
+        }
+
         const html = `<span class="status-text">${escapeHtml(headerText)}</span>`
             + progressBar
             + cancelHtml
+            + drmNotice
             + (trackLines ? `<div class="status-track-list">${trackLines}</div>` : '');
         setStatus(html);
 
