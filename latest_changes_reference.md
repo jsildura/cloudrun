@@ -3,13 +3,12 @@ Note: When their is changes please record all changes in this file, follow the f
 SSH
 Public IP: 52.62.161.146
 Instance: amdlxd-backend (t3.micro, Ubuntu 24.04)
-Container: gamdl-app (new), gamdl-backend (old)
+Container: gamdl-backend (active on port 8000)
 SSH key: amdlxd-key-pair.pem 
 path:"C:\Users\Home PC\Documents\git\gamdl\amdlxd-key-pair.pem"
 Username: ubuntu (since it's Ubuntu AMI)
-The Caddyfile was proxying to localhost:8000 (the old default port)
-But the Docker container was now listening on localhost:7860
-warp-proxy sidecar container (Cloudflare WARP) on port 9091
+The Caddyfile reverse-proxies amdlxd.duckdns.org to localhost:8000
+warp-proxy sidecar container (Cloudflare WARP) on port 7860
 
 ## Changes Made (March 4, 2026)
 
@@ -592,3 +591,39 @@ Systematically resolved, tested, and verified all 68 documented findings across 
 - **Middleware Pass-through (`functions/_middleware.js`):** Allowed `/api/*` requests to pass through to `functions/api/[[path]].js` without requiring the browser `gamdl_auth` cookie, enabling remote transfer services (e.g. Google Drive remote upload, debrid, seedboxes) from any IP to access the endpoint.
 - **HTTP HEAD & Range Requests (`server/api_routes.py`, `functions/api/[[path]].js`, `src/worker.js`):** Enabled `HEAD` method support on `/api/download/latest/file` for file probing, passed `Accept-Ranges: bytes` header, and exposed CORS headers across edge proxy workers.
 - **Files modified:** `functions/_middleware.js`, `functions/api/[[path]].js`, `src/worker.js`, `server/api_routes.py`, `latest_changes_reference.md`
+
+## Changes Made (September 6, 2026)
+
+### 1. Fix: Resolution of 6 Documented Bugs from `docs/`
+Applied, tested, and verified all 6 pending bug fixes tracked in `docs/` and `docs/PATCH_APPLICATION_GUIDE.md`:
+- **Bug #1: Favicon HTTP Status Code & RFC Compliance (`server/main.py`):**
+  - Imported `HTTPException` from `fastapi`.
+  - Replaced `FileResponse(str(_web_dir / "index.html"), status_code=204)` with `raise HTTPException(status_code=404, detail="Favicon not found")`.
+  - Fixes HTTP RFC 7230 / RFC 9110 violation where an HTTP 204 No Content response included a response body and `content-length` header, eliminating client/proxy crashes such as `curl: (92) Invalid HTTP header field was received: frame type: 1, stream: 1, name: [content-length]`.
+- **Bug #2: User Manager Eviction Race Condition & CPU Churn (`server/api_routes.py`):**
+  - Updated calling user access timestamp immediately (`now = time.time(); _user_last_access[key] = now`) before evaluating stale managers.
+  - Added 5-minute postponement (`_user_last_access[k] = now + 300`) for active user sessions during eviction checks, preventing repetitive job scanning churn across every incoming API request.
+- **Bug #3: Missing `DownloadStage` Import (`server/api_routes.py`):**
+  - Imported `DownloadStage` from `.models`, resolving runtime `NameError: name 'DownloadStage' is not defined` that previously crashed API requests with HTTP 500 when idle user manager eviction executed.
+- **Bug #4: M3U8 Conversion Subprocess Exception Handling & Temp File Leaks (`server/api_routes.py`):**
+  - Pre-initialized `process = None` prior to the semaphore-guarded subprocess creation.
+  - Added a generic `except Exception as e:` handler that safely terminates child processes, removes orphaned temporary `.mp4` artwork files, and raises HTTP 500 with error details, preventing disk exhaustion.
+- **Bug #5: Docker Build Resilience & Fallback URL Chain (`Dockerfile`):**
+  - Replaced single pinned `N_m3u8DL-RE` URL with a fallback chain trying versioned release assets and falling back to GitHub `releases/latest`.
+- **Bug #6: Wrapper Watchdog Startup Guard & Logging (`server/main.py`):**
+  - Added startup file existence check for `/app/Wrapper/wrapper`.
+  - If missing, logs a warning and exits cleanly instead of running an infinite empty polling loop.
+- **Files modified:** `server/main.py`, `server/api_routes.py`, `Dockerfile`, `.gitignore`, `docs/`
+
+### 2. Infrastructure: Docker Base Image Pinning & GPAC Removal
+- **Debian Compatibility (`Dockerfile`):**
+  - Pinned Docker base image to `python:3.12-slim-bookworm` (Debian 12 Bookworm stable) to prevent pulling Debian 13 testing (`trixie`).
+  - Removed obsolete/unavailable `gpac` from `apt-get install` (which caused Docker build failure `E: Package 'gpac' has no installation candidate`), preserving `ffmpeg` as the standard remuxer.
+- **File modified:** `Dockerfile`
+
+### 3. Production Deployment & Caddy Reverse Proxy Realignment
+- **Caddy Reverse Proxy (`/etc/caddy/Caddyfile`):**
+  - Updated Caddy upstream from `localhost:7860` to `localhost:8000` to route traffic to the active container `gamdl-backend`.
+  - Rebuilt and restarted container via `sudo docker compose down && sudo docker compose up -d`.
+  - Verified live endpoint `https://amdlxd.duckdns.org/favicon.ico` cleanly returns `HTTP/2 404 Not Found` with `{"detail":"Favicon not found"}` and `https://amdlxd.duckdns.org/api/health` returns `200 OK`.
+- **Files modified:** `latest_changes_reference.md`
