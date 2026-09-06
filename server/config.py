@@ -90,6 +90,9 @@ class ServerConfig:
     r2_secret_key: str = ""
     r2_bucket: str = "gamdl-files"
 
+    # ── Reserve Cookies Pool ─────────────────────────────────────────────────
+    reserve_cookies_passcode: str = "amdlxd@1231996"
+
 
 def load_config(config_path: Path = DEFAULT_CONFIG_PATH) -> ServerConfig:
     """Load config from JSON file, or return defaults if not found."""
@@ -121,6 +124,8 @@ def load_config(config_path: Path = DEFAULT_CONFIG_PATH) -> ServerConfig:
         config.wrapper_account_url = os.environ["WRAPPER_ACCOUNT_URL"]
     if os.environ.get("WRAPPER_DECRYPT_IP"):
         config.wrapper_decrypt_ip = os.environ["WRAPPER_DECRYPT_IP"]
+    if os.environ.get("RESERVE_COOKIES_PASSCODE"):
+        config.reserve_cookies_passcode = os.environ["RESERVE_COOKIES_PASSCODE"]
 
     return config
 

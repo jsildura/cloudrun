@@ -19,7 +19,7 @@ export async function onRequest(context) {
             headers: {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, HEAD',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, Range, X-Requested-With',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, Range, X-Requested-With, X-Reserve-Passcode',
                 'Access-Control-Expose-Headers': 'Content-Disposition, Content-Length, Content-Type, Accept-Ranges',
                 'Access-Control-Max-Age': '86400',
             },

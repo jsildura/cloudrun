@@ -1170,6 +1170,199 @@ a:hover {
 }
 
 
+/* ── Reserve Cloud Cookies Card ───────────────────────────────────────────── */
+.reserve-cloud-card {
+    margin-top: 14px;
+    margin-bottom: 12px;
+    padding: 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.reserve-cloud-card:focus-within {
+    border-color: rgba(255, 45, 85, 0.4);
+    box-shadow: 0 0 12px rgba(255, 45, 85, 0.08);
+}
+
+.reserve-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.reserve-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.reserve-title-wrap h4 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.reserve-icon {
+    color: var(--accent);
+    flex-shrink: 0;
+}
+
+.reserve-badge {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    background: rgba(255, 45, 85, 0.12);
+    color: var(--accent);
+    border: 1px solid rgba(255, 45, 85, 0.25);
+}
+
+.reserve-badge.unlocked {
+    background: rgba(48, 209, 88, 0.12);
+    color: var(--success);
+    border-color: rgba(48, 209, 88, 0.25);
+}
+
+.reserve-description {
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    line-height: 1.35;
+    margin: 0 0 10px 0;
+}
+
+.reserve-input-group {
+    display: flex;
+    gap: 8px;
+}
+
+.reserve-passcode-input {
+    flex: 1;
+    height: 36px;
+    padding: 0 12px;
+    font-size: 0.82rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    transition: border-color var(--transition-fast);
+}
+
+.reserve-passcode-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.btn-reserve-unlock {
+    background: var(--accent-gradient);
+    border: none;
+    color: #fff;
+    font-weight: 600;
+}
+
+.btn-reserve-unlock:hover {
+    opacity: 0.92;
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.reserve-unlocked-actions-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.reserve-pool-count {
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.reserve-pool-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.btn-icon-subtle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-icon-subtle:hover {
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+    background: var(--bg-hover);
+}
+
+.reserve-selector-row {
+    margin-bottom: 10px;
+}
+
+.reserve-account-select {
+    width: 100%;
+    height: 38px;
+    font-size: 0.82rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    padding: 0 10px;
+}
+
+.reserve-actions-row {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-reserve-connect {
+    flex: 1;
+    justify-content: center;
+    background: var(--accent-gradient);
+    border: none;
+    color: #fff;
+    font-weight: 600;
+}
+
+.btn-reserve-connect:hover:not(:disabled) {
+    opacity: 0.92;
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.btn-reserve-connect:disabled,
+.btn-reserve-delete:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.btn-reserve-delete {
+    width: 38px;
+    padding: 0;
+    justify-content: center;
+    color: var(--text-muted);
+}
+
+.btn-reserve-delete:hover:not(:disabled) {
+    border-color: var(--error);
+    color: var(--error);
+}
+
+
 /* ── About ─────────────────────────────────────────────────────────────────── */
 .about-content {
     text-align: center;

@@ -160,6 +160,13 @@ async def lifespan(app: FastAPI):
                 "Cloud storage disabled."
             )
 
+    # Initialize Reserve Cookies Manager
+    from .reserve_cookies import ReserveCookiesManager
+    reserve_mgr = ReserveCookiesManager(cloud_storage=api_routes.cloud_storage)
+    reserve_mgr._load()
+    api_routes.reserve_manager = reserve_mgr
+    logger.info("RCM Initialized")
+
     # SSE routes import per-user DMs from api_routes directly — no injection needed.
 
     # Start background cleanup loop (safety net for abandoned sessions)

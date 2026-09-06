@@ -52,6 +52,43 @@ class GamdlApi {
         return this._fetch('/api/auth/connect', { method: 'POST' });
     }
 
+    // ── Reserve Cookies Pool ──────────────────────────────────────────────
+
+    async contributeReserveCookie({ storefront, has_subscription }) {
+        return this._fetch('/api/reserve-cookies/contribute', {
+            method: 'POST',
+            body: JSON.stringify({ storefront, has_subscription }),
+        });
+    }
+
+    async unlockReserveCookies(passcode) {
+        return this._fetch('/api/reserve-cookies/unlock', {
+            method: 'POST',
+            body: JSON.stringify({ passcode }),
+        });
+    }
+
+    async getReserveCookies(passcode) {
+        return this._fetch('/api/reserve-cookies', {
+            headers: { 'X-Reserve-Passcode': passcode },
+        });
+    }
+
+    async connectReserveCookie(accountId, passcode) {
+        return this._fetch(`/api/reserve-cookies/connect/${accountId}`, {
+            method: 'POST',
+            headers: { 'X-Reserve-Passcode': passcode },
+        });
+    }
+
+    async deleteReserveCookie(accountId, passcode) {
+        return this._fetch(`/api/reserve-cookies/${accountId}`, {
+            method: 'DELETE',
+            headers: { 'X-Reserve-Passcode': passcode },
+        });
+    }
+
+
     // ── Downloads ─────────────────────────────────────────────────────────
 
     async startDownload(url, config = null, selectedTracks = null) {

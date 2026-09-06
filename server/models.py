@@ -156,3 +156,39 @@ class ConfigUpdate(BaseModel):
 class WSMessage(BaseModel):
     type: str
     data: dict = {}
+
+
+# ── Reserve Cookies ───────────────────────────────────────────────────────────
+
+class ReserveContributeRequest(BaseModel):
+    storefront: str = "unknown"
+    has_subscription: bool = False
+
+
+class ReserveContributeResponse(BaseModel):
+    id: str
+    storefront: str
+    is_new: bool
+
+
+class ReserveUnlockRequest(BaseModel):
+    passcode: str
+
+
+class ReserveAccountInfo(BaseModel):
+    id: str
+    storefront: str
+    has_subscription: bool
+    contributed_at: str
+    last_active: str
+
+
+class ReserveUnlockResponse(BaseModel):
+    success: bool
+    accounts: list[ReserveAccountInfo] = []
+
+
+class ReserveConnectResponse(BaseModel):
+    token: str
+    auth_status: AuthStatus
+

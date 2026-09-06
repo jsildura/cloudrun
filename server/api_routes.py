@@ -24,7 +24,20 @@ from fastapi.responses import FileResponse
 
 from .config import ServerConfig, load_config, save_config
 from .download_manager import DownloadManager
-from .models import AuthStatus, ConfigUpdate, DownloadJob, DownloadRequest, PreviewResponse
+from .models import (
+    AuthStatus,
+    ConfigUpdate,
+    DownloadJob,
+    DownloadRequest,
+    PreviewResponse,
+    ReserveAccountInfo,
+    ReserveConnectResponse,
+    ReserveContributeRequest,
+    ReserveContributeResponse,
+    ReserveUnlockRequest,
+    ReserveUnlockResponse,
+)
+from .reserve_cookies import ReserveCookiesManager
 from .storage import CloudStorage
 
 logger = logging.getLogger(__name__)
@@ -38,6 +51,9 @@ _USER_MANAGER_TTL = 1800  # 30 minutes — evict idle user managers
 
 # ── Cloud storage instance (set by main.py at startup when cloud_mode=True) ───
 cloud_storage: CloudStorage | None = None
+
+# ── Reserve cookies manager instance (set by main.py at startup) ──────────────
+reserve_manager: ReserveCookiesManager | None = None
 
 # ── Simple in-memory per-IP rate limiter ──────────────────────────────────────
 _rate_limits: dict[str, list[float]] = defaultdict(list)
@@ -1010,3 +1026,137 @@ async def save_animated_artwork(job_id: str, index: int, request: Request):
         media_type="video/mp4",
         headers={"X-Filename": file_path.name},
     )
+
+
+# ── Reserve Cookies ───────────────────────────────────────────────────────────
+
+
+def _check_reserve_passcode(request: Request) -> None:
+    """Verify X-Reserve-Passcode header against configured passcode."""
+    passcode = request.headers.get("X-Reserve-Passcode", "")
+    cfg = _get_current_config()
+    if not reserve_manager or not reserve_manager.verify_passcode(passcode, cfg):
+        raise HTTPException(status_code=401, detail="Invalid reserve passcode")
+
+
+@router.post("/reserve-cookies/contribute", response_model=ReserveContributeResponse)
+async def contribute_reserve_cookie(
+    req: ReserveContributeRequest,
+    request: Request,
+) -> ReserveContributeResponse:
+    """Contribute a verified Apple Music token to the reserve pool.
+    The token is extracted from the Authorization: Bearer <token> header.
+    """
+    _check_rate_limit(request)
+    try:
+        token = _extract_token(request)
+    except HTTPException:
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+    if not reserve_manager:
+        return ReserveContributeResponse(id="", storefront=req.storefront, is_new=False)
+
+    result = reserve_manager.contribute(
+        token=token,
+        storefront=req.storefront,
+        has_subscription=req.has_subscription,
+    )
+    return ReserveContributeResponse(**result)
+
+
+@router.post("/reserve-cookies/unlock", response_model=ReserveUnlockResponse)
+async def unlock_reserve_cookies(
+    req: ReserveUnlockRequest,
+    request: Request,
+) -> ReserveUnlockResponse:
+    """Validate passcode and return list of reserve accounts (without tokens)."""
+    _check_rate_limit(request)
+    cfg = _get_current_config()
+    if not reserve_manager or not reserve_manager.verify_passcode(req.passcode, cfg):
+        raise HTTPException(status_code=401, detail="Invalid reserve passcode")
+
+    accounts = reserve_manager.list_accounts()
+    return ReserveUnlockResponse(
+        success=True,
+        accounts=[ReserveAccountInfo(**a) for a in accounts],
+    )
+
+
+@router.get("/reserve-cookies", response_model=list[ReserveAccountInfo])
+async def list_reserve_cookies(request: Request) -> list[ReserveAccountInfo]:
+    """List available reserve accounts (requires X-Reserve-Passcode header)."""
+    _check_rate_limit(request)
+    _check_reserve_passcode(request)
+    accounts = reserve_manager.list_accounts() if reserve_manager else []
+    return [ReserveAccountInfo(**a) for a in accounts]
+
+
+@router.post("/reserve-cookies/connect/{account_id}", response_model=ReserveConnectResponse)
+async def connect_reserve_cookie(
+    account_id: str,
+    request: Request,
+) -> ReserveConnectResponse:
+    """Connect to a reserve account by ID.
+    Looks up token internally, authenticates with Apple Music, and returns the token and status.
+    """
+    _check_rate_limit(request)
+    _check_reserve_passcode(request)
+
+    if not reserve_manager:
+        raise HTTPException(status_code=500, detail="Reserve manager not initialized")
+
+    token = reserve_manager.get_token_by_id(account_id)
+    if not token:
+        raise HTTPException(status_code=404, detail="Account not found in reserve pool")
+
+    dm = _get_user_dm(token)
+    cfg = _get_current_config()
+
+    try:
+        if dm.is_authenticated:
+            auth_status = AuthStatus(
+                authenticated=True,
+                active_subscription=dm.has_subscription,
+                account_restrictions=dm.has_restrictions,
+                storefront=dm.storefront,
+            )
+        else:
+            result = await dm.authenticate_from_token(token, cfg.language)
+            auth_status = AuthStatus(
+                authenticated=result["authenticated"],
+                active_subscription=result["active_subscription"],
+                account_restrictions=result["account_restrictions"],
+                storefront=result["storefront"],
+            )
+
+        reserve_manager.update_account_status(
+            account_id,
+            storefront=auth_status.storefront,
+            has_subscription=auth_status.active_subscription,
+        )
+        return ReserveConnectResponse(token=token, auth_status=auth_status)
+    except Exception as e:
+        logger.error("Failed to authenticate reserve account %s: %s", account_id, e)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to authenticate reserve account: {e}",
+        )
+
+
+@router.delete("/reserve-cookies/{account_id}")
+async def delete_reserve_cookie(
+    account_id: str,
+    request: Request,
+) -> dict[str, bool]:
+    """Delete a reserve account from the pool by ID."""
+    _check_rate_limit(request)
+    _check_reserve_passcode(request)
+
+    if not reserve_manager:
+        raise HTTPException(status_code=500, detail="Reserve manager not initialized")
+
+    success = reserve_manager.delete_account(account_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    return {"success": True}

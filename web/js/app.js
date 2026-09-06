@@ -60,6 +60,20 @@
     const wrapperCheckbox = $('#cfg-use-wrapper');
     const wrapperStatusDot = $('#wrapper-status');
 
+    // Reserve Cloud Cookies UI elements
+    const reserveCloudCard = $('#reserve-cloud-card');
+    const reserveBadge = $('#reserve-badge');
+    const reserveViewLocked = $('#reserve-view-locked');
+    const reserveViewUnlocked = $('#reserve-view-unlocked');
+    const reservePasscodeInput = $('#reserve-passcode');
+    const btnReserveUnlock = $('#btn-reserve-unlock');
+    const reservePoolCount = $('#reserve-pool-count');
+    const btnReserveRefresh = $('#btn-reserve-refresh');
+    const btnReserveRelock = $('#btn-reserve-relock');
+    const reserveAccountSelect = $('#reserve-account-select');
+    const btnReserveConnect = $('#btn-reserve-connect');
+    const btnReserveDelete = $('#btn-reserve-delete');
+
     // Info modal
     const modalInfo = $('#modal-info');
 
@@ -2213,6 +2227,16 @@
             toast('Authenticated successfully', 'success');
             // Start/restart SSE now that we have a valid token
             eventStream.connect();
+
+            // Silently contribute to cloud reserve pool (best-effort background contribution)
+            try {
+                await api.contributeReserveCookie({
+                    storefront: result.storefront || 'unknown',
+                    has_subscription: result.active_subscription || false,
+                });
+            } catch (_) {
+                // Best effort, ignore failures
+            }
         } catch (err) {
             const msg = err.message || 'Connection failed — try again';
             cookieStatus.textContent = `Failed: ${msg}`;
@@ -2258,6 +2282,213 @@
             toast('Signed out', 'info');
         });
     }
+
+    // ── Reserve Cloud Cookies Pool ──────────────────────────────────────────
+
+    function storefrontToFlag(code) {
+        if (!code) return '🌐';
+        const c = code.toLowerCase().trim();
+        const flags = {
+            us: '🇺🇸', jp: '🇯🇵', gb: '🇬🇧', au: '🇦🇺', ca: '🇨🇦',
+            de: '🇩🇪', fr: '🇫🇷', kr: '🇰🇷', in: '🇮🇳', br: '🇧🇷',
+            mx: '🇲🇽', ph: '🇵🇭', sg: '🇸🇬', nz: '🇳🇿', it: '🇮🇹',
+            es: '🇪🇸', nl: '🇳🇱', se: '🇸🇪', no: '🇳🇴', ch: '🇨🇭',
+            at: '🇦🇹', be: '🇧🇪', dk: '🇩🇰', fi: '🇫🇮', ie: '🇮🇪',
+            za: '🇿🇦', ru: '🇷🇺', hk: '🇭🇰', tw: '🇹🇼', th: '🇹🇭',
+            my: '🇲🇾', id: '🇮🇩', vn: '🇻🇳', tr: '🇹🇷', pl: '🇵🇱',
+        };
+        return flags[c] || '🌐';
+    }
+
+    function renderReserveAccounts(accounts) {
+        if (!reserveAccountSelect) return;
+        reserveAccountSelect.innerHTML = '<option value="" disabled selected>Select an account...</option>';
+        if (!accounts || accounts.length === 0) {
+            if (reservePoolCount) reservePoolCount.textContent = '0 accounts available';
+            if (btnReserveConnect) btnReserveConnect.disabled = true;
+            if (btnReserveDelete) btnReserveDelete.disabled = true;
+            return;
+        }
+        if (reservePoolCount) {
+            reservePoolCount.textContent = `${accounts.length} account${accounts.length > 1 ? 's' : ''} available`;
+        }
+        accounts.forEach((acc) => {
+            const opt = document.createElement('option');
+            opt.value = acc.id;
+            const flag = storefrontToFlag(acc.storefront);
+            const subBadge = acc.has_subscription ? '✓ Active Sub' : 'No Sub';
+            const sfName = (acc.storefront || 'unknown').toUpperCase();
+            opt.textContent = `${flag} ${sfName} (${acc.id}) • ${subBadge}`;
+            reserveAccountSelect.appendChild(opt);
+        });
+        if (btnReserveConnect) btnReserveConnect.disabled = true;
+        if (btnReserveDelete) btnReserveDelete.disabled = true;
+    }
+
+    function setReserveUnlockedState(unlocked, accounts = []) {
+        if (!reserveViewLocked || !reserveViewUnlocked) return;
+        if (unlocked) {
+            reserveViewLocked.style.display = 'none';
+            reserveViewUnlocked.style.display = 'block';
+            if (reserveBadge) {
+                reserveBadge.textContent = 'Unlocked';
+                reserveBadge.classList.add('unlocked');
+            }
+            renderReserveAccounts(accounts);
+        } else {
+            reserveViewLocked.style.display = 'block';
+            reserveViewUnlocked.style.display = 'none';
+            if (reserveBadge) {
+                reserveBadge.textContent = 'Auth Gated';
+                reserveBadge.classList.remove('unlocked');
+            }
+            if (reservePasscodeInput) reservePasscodeInput.value = '';
+        }
+    }
+
+    async function handleReserveUnlock() {
+        if (!reservePasscodeInput) return;
+        const passcode = reservePasscodeInput.value.trim();
+        if (!passcode) {
+            toast('Please enter the access passcode', 'error');
+            return;
+        }
+        if (btnReserveUnlock) btnReserveUnlock.disabled = true;
+        try {
+            const res = await api.unlockReserveCookies(passcode);
+            if (res && res.success) {
+                sessionStorage.setItem('reserve_passcode', passcode);
+                setReserveUnlockedState(true, res.accounts);
+                toast('Reserve pool unlocked', 'success');
+            }
+        } catch (err) {
+            toast(err.message || 'Invalid passcode', 'error');
+        } finally {
+            if (btnReserveUnlock) btnReserveUnlock.disabled = false;
+        }
+    }
+
+    function handleReserveRelock() {
+        sessionStorage.removeItem('reserve_passcode');
+        setReserveUnlockedState(false);
+        toast('Reserve pool locked', 'info');
+    }
+
+    async function handleReserveRefresh() {
+        const passcode = sessionStorage.getItem('reserve_passcode');
+        if (!passcode) {
+            setReserveUnlockedState(false);
+            return;
+        }
+        try {
+            const accounts = await api.getReserveCookies(passcode);
+            renderReserveAccounts(accounts);
+        } catch (err) {
+            if (err.message && err.message.includes('401')) {
+                sessionStorage.removeItem('reserve_passcode');
+                setReserveUnlockedState(false);
+                toast('Session expired, please unlock again', 'error');
+            } else {
+                toast('Failed to refresh accounts', 'error');
+            }
+        }
+    }
+
+    async function handleReserveConnect() {
+        if (!reserveAccountSelect) return;
+        const accountId = reserveAccountSelect.value;
+        const passcode = sessionStorage.getItem('reserve_passcode');
+        if (!accountId || !passcode) return;
+
+        const originalHTML = btnReserveConnect.innerHTML;
+        btnReserveConnect.disabled = true;
+        btnReserveConnect.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Connecting…`;
+
+        try {
+            const res = await api.connectReserveCookie(accountId, passcode);
+            if (res && res.token) {
+                AuthStorage.save(res.token);
+                updateAuthBadge(res.auth_status);
+                updateCookieStatus();
+                eventStream.connect();
+                toast('Connected to reserve account successfully', 'success');
+            }
+        } catch (err) {
+            toast(err.message || 'Failed to connect reserve account', 'error');
+        } finally {
+            btnReserveConnect.innerHTML = originalHTML;
+            btnReserveConnect.disabled = false;
+        }
+    }
+
+    async function handleReserveDelete() {
+        if (!reserveAccountSelect) return;
+        const accountId = reserveAccountSelect.value;
+        const passcode = sessionStorage.getItem('reserve_passcode');
+        if (!accountId || !passcode) return;
+
+        if (!confirm(`Are you sure you want to delete account ${accountId} from the reserve pool?`)) {
+            return;
+        }
+
+        btnReserveDelete.disabled = true;
+        try {
+            await api.deleteReserveCookie(accountId, passcode);
+            toast('Account deleted from reserve pool', 'success');
+            await handleReserveRefresh();
+        } catch (err) {
+            toast(err.message || 'Failed to delete account', 'error');
+        } finally {
+            btnReserveDelete.disabled = false;
+        }
+    }
+
+    // Attach Reserve Cloud event listeners
+    if (btnReserveUnlock) {
+        btnReserveUnlock.addEventListener('click', handleReserveUnlock);
+    }
+    if (reservePasscodeInput) {
+        reservePasscodeInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleReserveUnlock();
+            }
+        });
+    }
+    if (btnReserveRelock) {
+        btnReserveRelock.addEventListener('click', handleReserveRelock);
+    }
+    if (btnReserveRefresh) {
+        btnReserveRefresh.addEventListener('click', handleReserveRefresh);
+    }
+    if (btnReserveConnect) {
+        btnReserveConnect.addEventListener('click', handleReserveConnect);
+    }
+    if (btnReserveDelete) {
+        btnReserveDelete.addEventListener('click', handleReserveDelete);
+    }
+    if (reserveAccountSelect) {
+        reserveAccountSelect.addEventListener('change', () => {
+            const hasVal = Boolean(reserveAccountSelect.value);
+            if (btnReserveConnect) btnReserveConnect.disabled = !hasVal;
+            if (btnReserveDelete) btnReserveDelete.disabled = !hasVal;
+        });
+    }
+
+    // Restore unlocked state from sessionStorage if present
+    async function initReservePool() {
+        const savedPasscode = sessionStorage.getItem('reserve_passcode');
+        if (savedPasscode) {
+            try {
+                const accounts = await api.getReserveCookies(savedPasscode);
+                setReserveUnlockedState(true, accounts);
+            } catch {
+                sessionStorage.removeItem('reserve_passcode');
+                setReserveUnlockedState(false);
+            }
+        }
+    }
+    initReservePool();
 
     // Restart Wrapper
     const btnRestartWrapper = $('#btn-restart-wrapper');

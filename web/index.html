@@ -169,7 +169,8 @@
 
                     <!-- Subscription helper hint -->
                     <div class="auth-subscription-hint" id="auth-subscription-hint">
-                        <span>Don't have an active subscription? Get a free trial on <a href="https://music.apple.com/" target="_blank" rel="noopener">Apple Music &#x2197;</a></span>
+                        <span>Don't have an active subscription? Get a free trial on <a href="https://music.apple.com/"
+                                target="_blank" rel="noopener">Apple Music &#x2197;</a></span>
                     </div>
 
                     <!-- Cookie upload drop zone -->
@@ -206,6 +207,103 @@
                             </svg>
                             Reconnect
                         </button>
+                    </div>
+
+                    <!-- Reserve Cloud Cookies Section -->
+                    <div class="reserve-cloud-card" id="reserve-cloud-card">
+                        <div class="reserve-header">
+                            <div class="reserve-title-wrap">
+                                <svg class="reserve-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                                    <path
+                                        d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z">
+                                    </path>
+                                </svg>
+                                <h4>Accounts Pool</h4>
+                            </div>
+                            <span class="reserve-badge" id="reserve-badge">Auth Gated</span>
+                        </div>
+
+                        <!-- Locked View -->
+                        <div class="reserve-view-locked" id="reserve-view-locked">
+                            <p class="reserve-description">
+                                Connect to reserve Apple Music accounts provided by the admin. Enter the access passcode
+                                to
+                                unlock.
+                            </p>
+                            <form class="reserve-auth-form" id="reserve-auth-form" onsubmit="return false;">
+                                <div class="reserve-input-group">
+                                    <input type="password" id="reserve-passcode"
+                                        class="input-field reserve-passcode-input" placeholder="Enter access passcode"
+                                        autocomplete="current-password">
+                                    <button type="button" class="btn-auth btn-reserve-unlock" id="btn-reserve-unlock">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round">
+                                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                        </svg>
+                                        Unlock
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Unlocked View -->
+                        <div class="reserve-view-unlocked" id="reserve-view-unlocked" style="display: none;">
+                            <div class="reserve-unlocked-actions-bar">
+                                <span class="reserve-pool-count" id="reserve-pool-count">0 accounts available</span>
+                                <div class="reserve-pool-controls">
+                                    <button type="button" class="btn-icon-subtle" id="btn-reserve-refresh"
+                                        title="Refresh accounts">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round">
+                                            <polyline points="23 4 23 10 17 10"></polyline>
+                                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                                        </svg>
+                                    </button>
+                                    <button type="button" class="btn-icon-subtle" id="btn-reserve-relock"
+                                        title="Lock pool">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round">
+                                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                            <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="reserve-selector-row">
+                                <select class="select-input reserve-account-select" id="reserve-account-select">
+                                    <option value="" disabled selected>Select an account...</option>
+                                </select>
+                            </div>
+                            <div class="reserve-actions-row">
+                                <button type="button" class="btn-auth btn-reserve-connect" id="btn-reserve-connect"
+                                    disabled>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="23 4 23 10 17 10"></polyline>
+                                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                                    </svg>
+                                    Connect Account
+                                </button>
+                                <button type="button" class="btn-auth btn-reserve-delete" id="btn-reserve-delete"
+                                    title="Delete account from pool" disabled>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                        <path
+                                            d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2">
+                                        </path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="cookie-guide">
@@ -332,7 +430,8 @@
                     <div class="field">
                         <label for="cfg-cover-size">Cover Size (px)</label>
                         <input type="number" class="text-input" id="cfg-cover-size" min="100" max="5000" value="1200">
-                        <span class="help-text">Standard sizes: 600 (portable), 1200 (standard), 1400 (podcast), 3000 (master), up to 5000 (max quality).</span>
+                        <span class="help-text">Standard sizes: 600 (portable), 1200 (standard), 1400 (podcast), 3000
+                            (master), up to 5000 (max quality).</span>
                     </div>
                     <div class="field-row">
                         <label class="checkbox-label">
@@ -349,7 +448,8 @@
                         </label>
                     </div>
                     <div class="field-row">
-                        <label class="checkbox-label" title="Tag tracks with playlist title, curator/artist, playlist track numbering, and playlist artwork">
+                        <label class="checkbox-label"
+                            title="Tag tracks with playlist title, curator/artist, playlist track numbering, and playlist artwork">
                             <input type="checkbox" id="cfg-playlist-mode">
                             <span>Playlist Mode</span>
                         </label>
@@ -425,7 +525,9 @@
                             <option value="ytdlp">yt-dlp (Stable)</option>
                             <option value="nm3u8dlre">N_m3u8DL-RE</option>
                         </select>
-                        <span class="help-text"><strong>yt-dlp</strong> is the reliable default. <strong>N_m3u8DL-RE</strong> uses multi-threaded fragment downloads for faster speeds on large streams.</span>
+                        <span class="help-text"><strong>yt-dlp</strong> is the reliable default.
+                            <strong>N_m3u8DL-RE</strong> uses multi-threaded fragment downloads for faster speeds on
+                            large streams.</span>
                     </div>
                     <div class="field">
                         <label for="cfg-remux-mode">Remux Mode</label>
@@ -433,7 +535,9 @@
                             <option value="ffmpeg">FFmpeg (Stable)</option>
                             <option value="mp4box">MP4Box</option>
                         </select>
-                        <span class="help-text"><strong>FFmpeg</strong> is the robust standard remuxer. <strong>MP4Box</strong> adheres strictly to Apple's native ISO-BMFF container specifications.</span>
+                        <span class="help-text"><strong>FFmpeg</strong> is the robust standard remuxer.
+                            <strong>MP4Box</strong> adheres strictly to Apple's native ISO-BMFF container
+                            specifications.</span>
                     </div>
                     <div class="field">
                         <label for="cfg-language">Metadata Language</label>

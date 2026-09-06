@@ -36,19 +36,6 @@ spec:
           dependsOn:
             - gamdl-wrapper
           env:
-        # 2. Wrapper Sidecar Container
-        - image: asia-southeast1-docker.pkg.dev/amdlxd-serverless/gamdl-repo/gamdl-wrapper:latest
-          name: gamdl-wrapper
-          startupProbe:
-            tcpSocket:
-              port: 10020
-            initialDelaySeconds: 2
-            periodSeconds: 5
-            failureThreshold: 3
-          resources:
-            limits:
-              memory: 512Mi
-              cpu: "1"
             # ── Cloud mode flag ──
             - name: CLOUD_MODE
               value: "true"
@@ -73,3 +60,23 @@ spec:
                 secretKeyRef:
                   name: r2-config
                   key: bucket
+            # ── Reserve Cookies Passcode (from Secret Manager) ──
+            - name: RESERVE_COOKIES_PASSCODE
+              valueFrom:
+                secretKeyRef:
+                  name: reserve-cookies-passcode
+                  key: latest
+        # 2. Wrapper Sidecar Container
+        - image: asia-southeast1-docker.pkg.dev/amdlxd-serverless/gamdl-repo/gamdl-wrapper:latest
+          name: gamdl-wrapper
+          startupProbe:
+            tcpSocket:
+              port: 10020
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            limits:
+              memory: 512Mi
+              cpu: "1"
+
