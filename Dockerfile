@@ -1,7 +1,7 @@
 # Dockerfile — Hugging Face Spaces (Docker SDK)
 # Bundles: Python 3.12 + FFmpeg + mp4decrypt + Wrapper + Gamdl Backend
 
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
 
 # ── Install system dependencies ──────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
