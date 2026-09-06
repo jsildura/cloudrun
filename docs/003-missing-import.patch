@@ -1,0 +1,10 @@
+--- a/server/api_routes.py
++++ b/server/api_routes.py
+@@ -20,6 +20,7 @@ from .models import (
+     ReserveConnectResponse,
+     ReserveContributeRequest,
+     ReserveContributeResponse,
+     ReserveUnlockRequest,
+     ReserveUnlockResponse,
++    DownloadStage,
+ )

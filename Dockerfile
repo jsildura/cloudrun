@@ -21,9 +21,12 @@ RUN wget -qO /tmp/bento4.zip \
     && chmod +x /usr/local/bin/mp4decrypt \
     && rm -rf /tmp/bento4*
 
-# ── Install N_m3u8DL-RE ───────────────────────────────────────────────────────
-RUN wget -qO /tmp/nm3u8dlre.tar.gz \
-    https://github.com/nilaoda/N_m3u8DL-RE/releases/download/v0.6.0-beta/N_m3u8DL-RE_v0.6.0-beta_linux-x64_20260629.tar.gz \
+# ── Install N_m3u8DL-RE with fallback ────────────────────────────────────────
+RUN set -e; \
+    RELEASE_URL="https://github.com/nilaoda/N_m3u8DL-RE/releases/download/v0.6.0-beta/N_m3u8DL-RE_v0.6.0-beta_linux-x64_20260629.tar.gz"; \
+    wget -qO /tmp/nm3u8dlre.tar.gz "$RELEASE_URL" || \
+    wget -qO /tmp/nm3u8dlre.tar.gz "https://github.com/nilaoda/N_m3u8DL-RE/releases/download/v0.6.0-beta/N_m3u8DL-RE_v0.6.0-beta_linux-x64.tar.gz" || \
+    wget -qO /tmp/nm3u8dlre.tar.gz "https://github.com/nilaoda/N_m3u8DL-RE/releases/latest/download/N_m3u8DL-RE_linux-x64.tar.gz" \
     && tar -xzf /tmp/nm3u8dlre.tar.gz -C /tmp \
     && (cp /tmp/N_m3u8DL-RE*/N_m3u8DL-RE /usr/local/bin/N_m3u8DL-RE 2>/dev/null || cp /tmp/N_m3u8DL-RE /usr/local/bin/N_m3u8DL-RE) \
     && chmod +x /usr/local/bin/N_m3u8DL-RE \

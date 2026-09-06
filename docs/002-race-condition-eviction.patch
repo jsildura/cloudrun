@@ -1,0 +1,25 @@
+--- a/server/api_routes.py
++++ b/server/api_routes.py
+@@ -75,6 +75,9 @@ _USER_MANAGER_TTL = 1800  # 30 minutes — evict idle user managers
+ def _get_user_dm(token: str) -> DownloadManager:
+     """Get or create a per-user DownloadManager."""
+     key = hashlib.sha256(token.encode()).hexdigest()[:16]
++    
++    # Update access time for current user
++    now = time.time()
++    _user_last_access[key] = now
+
+     # Evict stale user managers to free memory
+-    now = time.time()
+     stale_keys = [
+         k for k, ts in list(_user_last_access.items())
+@@ -88,7 +91,9 @@ def _get_user_dm(token: str) -> DownloadManager:
+             )
+             if has_active:
+-                continue
++                # Update timestamp to prevent re-checking
++                _user_last_access[k] = now + 300  # Extend by 5 min
++                continue
+
+             _user_managers.pop(k, None)
+             _user_last_access.pop(k, None)

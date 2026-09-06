@@ -1,0 +1,32 @@
+--- a/server/api_routes.py
++++ b/server/api_routes.py
+@@ -280,6 +280,7 @@ async def convert_m3u8(url: str, request: Request, background_tasks: BackgroundTasks, quality: int = 720):
+         "--merge-output-format", "mp4",
+         "-o", temp_file,
+         url
+     ]
++    process = None
+     try:
+         async with _convert_m3u8_semaphore:
+             process = await asyncio.create_subprocess_exec(
+@@ -291,12 +292,20 @@ async def convert_m3u8(url: str, request: Request, background_tasks: BackgroundTasks, quality: int = 720):
+     except asyncio.TimeoutError:
+         if process:
+             try:
+                 process.kill()
+             except Exception:
+                 pass
+         if os.path.exists(temp_file):
+             os.remove(temp_file)
+         raise HTTPException(status_code=504, detail="Conversion timed out")
++    except Exception as e:
++        if process:
++            try:
++                process.kill()
++            except Exception:
++                pass
++        if os.path.exists(temp_file):
++            os.remove(temp_file)
++        raise HTTPException(status_code=500, detail=f"Conversion failed: {e}")
+
+     if process.returncode != 0:

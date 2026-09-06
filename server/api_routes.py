@@ -29,6 +29,7 @@ from .models import (
     ConfigUpdate,
     DownloadJob,
     DownloadRequest,
+    DownloadStage,
     PreviewResponse,
     ReserveAccountInfo,
     ReserveConnectResponse,
@@ -78,8 +79,11 @@ def _get_user_dm(token: str) -> DownloadManager:
     """Get or create a per-user DownloadManager."""
     key = hashlib.sha256(token.encode()).hexdigest()[:16]
 
-    # Evict stale user managers to free memory
+    # Update access time for current user
     now = time.time()
+    _user_last_access[key] = now
+
+    # Evict stale user managers to free memory
     stale_keys = [
         k for k, ts in list(_user_last_access.items())
         if now - ts > _USER_MANAGER_TTL and k != key
@@ -97,6 +101,8 @@ def _get_user_dm(token: str) -> DownloadManager:
                 for j in dm.jobs.values()
             )
             if has_active:
+                # Update timestamp to prevent re-checking
+                _user_last_access[k] = now + 300  # Extend by 5 min
                 continue
 
             _user_managers.pop(k, None)
@@ -120,8 +126,6 @@ def _get_user_dm(token: str) -> DownloadManager:
             except Exception:
                 pass
             logger.info("Evicted stale user manager: %s", k)
-
-    _user_last_access[key] = now
 
     if key not in _user_managers:
         dm = DownloadManager()
@@ -317,6 +321,7 @@ async def convert_m3u8(url: str, request: Request, background_tasks: BackgroundT
         url
     ]
 
+    process = None
     try:
         async with _convert_m3u8_semaphore:
             process = await asyncio.create_subprocess_exec(
@@ -334,6 +339,15 @@ async def convert_m3u8(url: str, request: Request, background_tasks: BackgroundT
         if os.path.exists(temp_file):
             os.remove(temp_file)
         raise HTTPException(status_code=504, detail="Conversion timed out")
+    except Exception as e:
+        if process:
+            try:
+                process.kill()
+            except Exception:
+                pass
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+        raise HTTPException(status_code=500, detail=f"Conversion failed: {e}")
 
     if process.returncode != 0:
         logger.error(f"yt-dlp failed to convert artwork: {stderr.decode(errors='ignore')}")

@@ -1,0 +1,28 @@
+--- a/server/main.py
++++ b/server/main.py
+@@ -88,6 +88,13 @@ async def _wrapper_watchdog_loop() -> None:
+     """Background watchdog: monitors Wrapper ports 10020 and 30020.
+     If the wrapper daemon crashes, hangs, or enters a dead socket state,
+     it automatically recycles the process to maintain zero-touch reliability.
+     """
+     # Wait 30 seconds after server startup before running health checks
+     await asyncio.sleep(30)
++    
++    # Check if wrapper binary exists before starting watchdog
++    wrapper_bin = "/app/Wrapper/wrapper"
++    if not os.path.isfile(wrapper_bin):
++        logger.warning("Wrapper binary not found at %s — watchdog disabled", wrapper_bin)
++        return
++    
+     consecutive_failures = 0
+     while True:
+         await asyncio.sleep(_WRAPPER_WATCHDOG_INTERVAL)
+         try:
+-            # Check if wrapper binary exists on disk before attempting watchdog checks
+-            wrapper_bin = "/app/Wrapper/wrapper"
+-            if not os.path.isfile(wrapper_bin):
+-                continue
+-
+             # Run synchronous health check in thread executor
+             is_healthy = await asyncio.get_event_loop().run_in_executor(
+                 None, api_routes.check_wrapper_healthy

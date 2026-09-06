@@ -10,7 +10,7 @@ import httpx
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -76,15 +76,17 @@ async def _wrapper_watchdog_loop() -> None:
     """
     # Wait 30 seconds after server startup before running health checks
     await asyncio.sleep(30)
-    consecutive_failures = 0
 
+    # Check if wrapper binary exists before starting watchdog
+    wrapper_bin = "/app/Wrapper/wrapper"
+    if not os.path.isfile(wrapper_bin):
+        logger.warning("Wrapper binary not found at %s — watchdog disabled", wrapper_bin)
+        return
+
+    consecutive_failures = 0
     while True:
         await asyncio.sleep(_WRAPPER_WATCHDOG_INTERVAL)
         try:
-            # Check if wrapper binary exists on disk before attempting watchdog checks
-            wrapper_bin = "/app/Wrapper/wrapper"
-            if not os.path.isfile(wrapper_bin):
-                continue
 
             # Run synchronous health check in thread executor
             is_healthy = await asyncio.get_event_loop().run_in_executor(
@@ -275,7 +277,5 @@ async def favicon():
     favicon_path = _web_dir / "favicon.ico"
     if favicon_path.exists():
         return FileResponse(str(favicon_path))
-    return FileResponse(
-        str(_web_dir / "index.html"),
-        status_code=204,
-    )
+    # Return 404 instead of 204 with body (204 must not have a message body)
+    raise HTTPException(status_code=404, detail="Favicon not found")
