@@ -124,14 +124,15 @@
      * Atomically increment the total_downloads counter.
      * Auto-creates the stats document on first call.
      *
-     * Note: `stats` is server-write-only in the Firestore rules; client-side
-     * increments are best-effort and will no-op when rejected. The canonical
-     * counter lives behind a Cloud Function in production.
+     * Note: Firestore security rules validate that only total_downloads can be
+     * modified and that it can only increment by strictly +1 for authenticated users.
      */
     window.incrementDownloadCount = async function () {
         if (!window.db) return;
-        const statsRef = window.db.collection(STATS_COLLECTION).doc(STATS_DOC_ID);
         try {
+            const user = await getCurrentUser();
+            if (!user) return;
+            const statsRef = window.db.collection(STATS_COLLECTION).doc(STATS_DOC_ID);
             await statsRef.update({
                 total_downloads: firebase.firestore.FieldValue.increment(1),
             });
@@ -140,10 +141,13 @@
             const msg = error?.message || '';
             if (code === 'not-found' || msg.includes('No document to update')) {
                 // First-ever download — create the stats document
-                await statsRef.set({ total_downloads: 1 });
+                try {
+                    const statsRef = window.db.collection(STATS_COLLECTION).doc(STATS_DOC_ID);
+                    await statsRef.set({ total_downloads: 1 });
+                } catch (e) {
+                    console.warn('Failed to initialize download count:', e);
+                }
             } else {
-                // Permission-denied from read-only stats rules is expected;
-                // never break the download flow over a counter.
                 console.warn('Failed to increment download count:', error);
             }
         }

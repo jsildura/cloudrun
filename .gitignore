@@ -21,3 +21,5 @@ __pycache__
 !.dockerignore
 !uv.lock
 !docs
+!firestore.rules
+!firebase.json
