@@ -2723,6 +2723,28 @@
                 }
             }
         });
+
+        // ── Dismiss Splash Screen ──
+        // Ensures the splash plays for at least 5 seconds (covering the full
+        // animation cycle) and then fades out once init() has finished.
+        const splash = document.getElementById('splash-screen');
+        if (splash) {
+            const SPLASH_MIN_DURATION = 5000; // 5 seconds minimum
+            const splashStart = window.__splashStart || Date.now();
+            const elapsed = Date.now() - splashStart;
+            const remaining = Math.max(0, SPLASH_MIN_DURATION - elapsed);
+
+            setTimeout(() => {
+                splash.classList.add('splash-exit');
+                splash.addEventListener('transitionend', () => {
+                    splash.remove();
+                }, { once: true });
+                // Fallback removal if transitionend doesn't fire
+                setTimeout(() => {
+                    if (splash.parentNode) splash.remove();
+                }, 800);
+            }, remaining);
+        }
     }
 
     // Start when DOM ready
