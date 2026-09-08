@@ -650,3 +650,17 @@ Applied, tested, and verified all 6 pending bug fixes tracked in `docs/` and `do
   - Resolved `NameError: name 'storefront' is not defined` in `AppleMusicApi.create_from_netscape_cookies` by passing `storefront=None` to allow dynamic detection.
 - **Files modified:** `gamdl/downloader/downloader_song.py`, `gamdl/api/apple_music_api.py`, `latest_changes_reference.md`
 
+### 2. Fix: Executable Not Found: MP4Box (Remux Mode) & Dockerfile GPAC Re-integration
+- **Problem:** When users switched "Remux Mode" in Settings from "FFmpeg (Stable)" to "MP4Box", attempting to download any track failed immediately with: `Executable not found: MP4Box`.
+- **Root Cause:**
+  1. On September 6, `gpac` was removed from `Dockerfile` because Debian 12 (Bookworm) removed `gpac` from its default base repository, causing `apt-get install gpac` to fail with `no installation candidate`.
+  2. Without `gpac`, the built Docker container lacked the `MP4Box` binary in its system `PATH`.
+  3. When a download job ran with `remux_mode = RemuxMode.MP4BOX`, `downloader.py` executed `shutil.which("MP4Box")`, returned `None`, and raised `ExecutableNotFound("MP4Box")`.
+  4. In `downloader_music_video.py`, `remux_mp4box` also omitted `-new` flag and atom initialization flags (`-itags`, `-keep-utc`).
+- **Fix (`Dockerfile`):**
+  - Configured the official GPAC APT repository for Debian 12 Bookworm (`https://dist.gpac.io/gpac/linux/debian`) with official GPG keyring authentication.
+  - Installed `gpac` (providing `/usr/bin/MP4Box`) via `apt-get install -y --no-install-recommends gpac`.
+- **Fix (`gamdl/downloader/downloader_music_video.py`):**
+  - Updated `remux_mp4box` to include `-itags artist=placeholder -keep-utc -new` before `output_path`, aligning with `downloader_song.py` and MP4Box CLI syntax.
+- **Files modified:** `Dockerfile`, `gamdl/downloader/downloader_music_video.py`, `latest_changes_reference.md`
+

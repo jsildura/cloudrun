@@ -43,6 +43,10 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
             input_path_audio,
             "-add",
             input_path_video,
+            "-itags",
+            "artist=placeholder",
+            "-keep-utc",
+            "-new",
             output_path,
             silent=self.silent,
         )

@@ -3,13 +3,22 @@
 
 FROM python:3.12-slim-bookworm
 
-# ── Install system dependencies ──────────────────────────────────────────────
+# ── Install system dependencies & GPAC (MP4Box) ──────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     wget \
     tar \
     unzip \
     tini \
+    ca-certificates \
+    curl \
+    gnupg \
+    && install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://dist.gpac.io/gpac/linux/gpg.asc -o /etc/apt/keyrings/gpac.asc \
+    && chmod a+r /etc/apt/keyrings/gpac.asc \
+    && echo "deb [signed-by=/etc/apt/keyrings/gpac.asc] https://dist.gpac.io/gpac/linux/debian bookworm main" > /etc/apt/sources.list.d/gpac.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gpac \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Install mp4decrypt (Bento4) ──────────────────────────────────────────────
