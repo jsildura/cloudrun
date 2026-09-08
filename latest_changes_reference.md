@@ -627,3 +627,26 @@ Applied, tested, and verified all 6 pending bug fixes tracked in `docs/` and `do
   - Rebuilt and restarted container via `sudo docker compose down && sudo docker compose up -d`.
   - Verified live endpoint `https://amdlxd.duckdns.org/favicon.ico` cleanly returns `HTTP/2 404 Not Found` with `{"detail":"Favicon not found"}` and `https://amdlxd.duckdns.org/api/health` returns `200 OK`.
 - **Files modified:** `latest_changes_reference.md`
+
+## Changes Made (September 8, 2026)
+
+### 1. Fix: AAC 256kbps (Stable) Downloaded File Has No Audio (Zero Duration / Missing Audio Stream)
+- **Problem:** Downloading tracks with the "AAC 256kbps (Stable)" codec (`aac-legacy`) or "AAC-HE 64kbps (Stable)" (`aac-he-legacy`) resulted in `.m4a` files with only metadata and embedded cover art (~2.64 MiB total, 0 audio streams, 0.0s duration, 0 channels). In contrast, experimental FairPlay codecs (e.g. `AAC 256kbps 48kHz (Experimental)`) produced full audio without issue.
+- **Root Cause:**
+  1. In `gamdl/downloader/downloader_song.py`, `stage()` contained an erroneous shortcut:
+     ```python
+     if codec.is_legacy() and self.remux_mode == RemuxMode.FFMPEG:
+         await self.remux_ffmpeg(encrypted_path, staged_path, decryption_key.audio_track.key)
+     ```
+  2. Because `remux_mode` defaults to `ffmpeg`, this branch took precedence over `mp4decrypt`.
+  3. `remux_ffmpeg` executed: `ffmpeg -decryption_key <key> -i encrypted.m4a -c copy staged.m4a`. FFmpeg's stream copy (`-c copy`) cannot decrypt CENC ISO-23001-7 sample encryption on Apple Music's fragmented HLS fMP4 audio streams. FFmpeg dropped all audio samples and muxed an empty MP4 container with exit code 0.
+  4. Subsequent `apply_tags()` embedded the 2.63 MiB PNG cover and iTunes metadata tags into the empty container, resulting in an audio-less file.
+- **Fix (`gamdl/downloader/downloader_song.py`):**
+  - Removed the flawed `if codec.is_legacy() and self.remux_mode == RemuxMode.FFMPEG:` branch in `stage()`.
+  - All legacy tracks now correctly pass through `decrypt_mp4decrypt(...)` (Bento4's `mp4decrypt --key 1:<key>`), which cleanly decrypts the CENC audio track.
+  - After decryption, `remux_ffmpeg(...)` copies the clean, decrypted audio stream and applies `+faststart`.
+  - Removed unused `decryption_key` parameter from `remux_ffmpeg` in `downloader_song.py` to match `downloader_music_video.py`.
+- **Fix (`gamdl/api/apple_music_api.py`):**
+  - Resolved `NameError: name 'storefront' is not defined` in `AppleMusicApi.create_from_netscape_cookies` by passing `storefront=None` to allow dynamic detection.
+- **Files modified:** `gamdl/downloader/downloader_song.py`, `gamdl/api/apple_music_api.py`, `latest_changes_reference.md`
+

@@ -59,7 +59,7 @@ class AppleMusicApi:
             )
 
         return await cls.create(
-            storefront=storefront,
+            storefront=None,
             media_user_token=media_user_token,
             developer_token=None,
             *args,

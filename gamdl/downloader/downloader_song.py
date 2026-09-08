@@ -226,22 +226,12 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
         self,
         input_path: str,
         output_path: str,
-        decryption_key: str = None,
     ):
-        if decryption_key:
-            key = [
-                "-decryption_key",
-                decryption_key,
-            ]
-        else:
-            key = []
-
         await async_subprocess(
             self.full_ffmpeg_path,
             "-loglevel",
             "error",
             "-y",
-            *key,
             "-i",
             input_path,
             "-c",
@@ -306,13 +296,7 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
         media_id: str,
         fairplay_key: str,
     ):
-        if codec.is_legacy() and self.remux_mode == RemuxMode.FFMPEG:
-            await self.remux_ffmpeg(
-                encrypted_path,
-                staged_path,
-                decryption_key.audio_track.key,
-            )
-        elif codec.is_legacy() or not self.use_wrapper:
+        if codec.is_legacy() or not self.use_wrapper:
             await self.decrypt_mp4decrypt(
                 encrypted_path,
                 decrypted_path,
