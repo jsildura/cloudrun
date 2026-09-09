@@ -3,7 +3,7 @@ from pathlib import Path
 from ..interface.enums import SongCodec, SyncedLyricsFormat
 from ..interface.interface_song import AppleMusicSongInterface
 from ..interface.types import DecryptionKeyAv
-from ..utils import async_subprocess
+from ..utils import async_subprocess, emit_progress
 from .amdecrypt import decrypt_file
 from .constants import DEFAULT_SONG_DECRYPTION_KEY, PLAYLIST_MEDIA_TYPE
 from .downloader_base import AppleMusicBaseDownloader
@@ -295,6 +295,7 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
         codec: SongCodec,
         media_id: str,
         fairplay_key: str,
+        on_progress=None,
     ):
         if codec.is_legacy() or not self.use_wrapper:
             await self.decrypt_mp4decrypt(
@@ -303,6 +304,7 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
                 decryption_key.audio_track.key,
                 codec.is_legacy(),
             )
+            await emit_progress(on_progress, "remuxing", "Remuxing container…")
             if self.remux_mode == RemuxMode.FFMPEG:
                 await self.remux_ffmpeg(
                     decrypted_path,
@@ -314,6 +316,8 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
                     staged_path,
                 )
         else:
+            # Wrapper path: decrypt + remux are fused into a single operation,
+            # so there is no distinct "remuxing" sub-stage to report here.
             await self.decrypt_amdecrypt(
                 encrypted_path,
                 staged_path,
@@ -342,6 +346,7 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
     async def download(
         self,
         download_item: DownloadItem,
+        on_progress=None,
     ) -> None:
         if self.synced_lyrics_only:
             return
@@ -352,6 +357,7 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
             "encrypted",
             ".m4a",
         )
+        await emit_progress(on_progress, "downloading", "Downloading audio stream…")
         await self.download_stream(
             download_item.stream_info.audio_track.stream_url,
             encrypted_path,
@@ -363,6 +369,7 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
             "decrypted",
             ".m4a",
         )
+        await emit_progress(on_progress, "decrypting", "Decrypting audio…")
         await self.stage(
             encrypted_path,
             decrypted_path,
@@ -371,9 +378,11 @@ class AppleMusicSongDownloader(AppleMusicBaseDownloader):
             self.codec,
             download_item.media_metadata["id"],
             download_item.stream_info.audio_track.fairplay_key,
+            on_progress=on_progress,
         )
 
         cover_bytes = await self.interface.get_cover_bytes(download_item.cover_url)
+        await emit_progress(on_progress, "tagging", "Embedding metadata & artwork…")
         await self.apply_tags(
             download_item.staged_path,
             download_item.media_tags,

@@ -858,6 +858,27 @@ class DownloadManager:
         logger.error("Connectivity probe failed after %d attempts", max_attempts)
         return False
 
+    def _make_progress_handler(self, job: DownloadJob, track_index: int):
+        """Build an async on_progress callback for a single track.
+
+        The downloader engine calls it with (stage_name, detail) as the track
+        moves through downloading → decrypting → remuxing → tagging. Each call
+        updates the track's stage + detail, refreshes the idle watchdog timer,
+        and broadcasts the job over SSE. ``track_index`` is bound as an argument
+        (not captured from a loop variable) so it is always correct.
+        """
+        async def _on_progress(stage_name: str, detail: str) -> None:
+            track = job.tracks[track_index]
+            try:
+                track.stage = DownloadStage(stage_name)
+            except ValueError:
+                pass
+            track.stage_detail = detail
+            job.last_active_time = time.time()
+            await self._broadcast_job(job)
+
+        return _on_progress
+
     async def _process_job(
         self, job_id: str, url: str, config: ServerConfig
     ) -> None:
@@ -1131,12 +1152,14 @@ class DownloadManager:
                 retry_delays = [10, 30, 60]  # seconds
                 success = False
                 _used_fallback = False  # track whether we already tried the fallback
+                on_progress = self._make_progress_handler(job, i)
 
                 for attempt in range(max_retries + 1):
                     job.last_active_time = time.time()
                     try:
-                        result_item = await downloader.download(download_item)
+                        result_item = await downloader.download(download_item, on_progress=on_progress)
                         job.tracks[i].stage = DownloadStage.DONE
+                        job.tracks[i].stage_detail = None
                         if hasattr(result_item, 'final_path') and result_item.final_path:
                             job.tracks[i].file_path = str(result_item.final_path)
                             # Compute relative path from job temp dir for ZIP folder structure
@@ -1358,7 +1381,10 @@ class DownloadManager:
                 raise fallback_item.error
 
             try:
-                result_item = await fallback_downloader.download(fallback_item)
+                result_item = await fallback_downloader.download(
+                    fallback_item,
+                    on_progress=self._make_progress_handler(job, track_index),
+                )
             except MediaFileExists as e:
                 logger.info(
                     "Codec fallback: track %d file already exists: %s — reusing file",
@@ -1368,6 +1394,7 @@ class DownloadManager:
                 result_item.final_path = e.media_path
 
             track.stage = DownloadStage.DONE
+            track.stage_detail = None
             track.error_message = None
 
             if hasattr(result_item, "final_path") and result_item.final_path:
@@ -1640,8 +1667,12 @@ class DownloadManager:
                 for attempt in range(max_retries + 1):
                     job.last_active_time = time.time()
                     try:
-                        result_item = await downloader.download(download_item)
+                        result_item = await downloader.download(
+                            download_item,
+                            on_progress=self._make_progress_handler(job, track_index),
+                        )
                         track.stage = DownloadStage.DONE
+                        track.stage_detail = None
                         if hasattr(result_item, 'final_path') and result_item.final_path:
                             track.file_path = str(result_item.final_path)
                             try:
@@ -1829,8 +1860,12 @@ class DownloadManager:
                 for attempt in range(max_retries + 1):
                     job.last_active_time = time.time()
                     try:
-                        result_item = await downloader.download(download_item)
+                        result_item = await downloader.download(
+                            download_item,
+                            on_progress=self._make_progress_handler(job, track_index),
+                        )
                         track.stage = DownloadStage.DONE
+                        track.stage_detail = None
                         if hasattr(result_item, 'final_path') and result_item.final_path:
                             track.file_path = str(result_item.final_path)
                             try:

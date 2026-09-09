@@ -625,6 +625,17 @@ a:hover {
     box-shadow: 0 0 8px var(--accent-glow);
 }
 
+/* Live sub-stage caption (Decrypting…/Remuxing…/Tagging…) under a track */
+.track-stage-detail {
+    font-size: 0.72rem;
+    color: var(--accent);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    animation: pulse 1.6s ease-in-out infinite;
+}
+
 
 /* ── Save buttons ──────────────────────────────────────────────────────── */
 .track-save-btn {
@@ -1735,6 +1746,18 @@ a:hover {
     white-space: nowrap;
 }
 
+/* Active track + sub-stage caption shown in the status bar for preview jobs */
+.status-active-detail {
+    width: 100%;
+    margin-top: 2px;
+    font-size: 0.78rem;
+    color: var(--accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    animation: pulse 1.6s ease-in-out infinite;
+}
+
 
 
 .preview-section {
@@ -2318,6 +2341,35 @@ a:hover {
     color: var(--text-muted);
     flex-shrink: 0;
     font-variant-numeric: tabular-nums;
+}
+
+/* Live per-track download sub-stage badge (takes the duration's slot) */
+.preview-track-status {
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.preview-track-status.active {
+    color: var(--accent);
+    animation: pulse 1.4s ease-in-out infinite;
+}
+
+.preview-track-status.done {
+    color: var(--success);
+    font-weight: 700;
+}
+
+.preview-track-status.error {
+    color: var(--error);
+}
+
+/* While a live status badge is showing, hide the static duration */
+.preview-track-item.has-status .preview-track-duration {
+    display: none;
 }
 
 /* Footer */

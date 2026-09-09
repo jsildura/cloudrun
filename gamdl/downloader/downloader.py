@@ -453,6 +453,7 @@ class AppleMusicDownloader:
     async def download(
         self,
         download_item: DownloadItem,
+        on_progress=None,
     ) -> DownloadItem:
         try:
             if download_item.flat_filter_result:
@@ -465,7 +466,7 @@ class AppleMusicDownloader:
                 raise download_item.error
 
             await self._initial_processing(download_item)
-            await self._download(download_item)
+            await self._download(download_item, on_progress)
             await self._final_processing(download_item)
 
             return download_item
@@ -476,6 +477,7 @@ class AppleMusicDownloader:
     async def _download(
         self,
         download_item: DownloadItem,
+        on_progress=None,
     ) -> None:
         if (
             self.song_downloader.synced_lyrics_only
@@ -541,10 +543,10 @@ class AppleMusicDownloader:
                 raise FormatNotAvailable(download_item.media_metadata["id"])
 
         if download_item.media_metadata["type"] in SONG_MEDIA_TYPE:
-            await self.song_downloader.download(download_item)
+            await self.song_downloader.download(download_item, on_progress)
 
         if download_item.media_metadata["type"] in MUSIC_VIDEO_MEDIA_TYPE:
-            await self.music_video_downloader.download(download_item)
+            await self.music_video_downloader.download(download_item, on_progress)
 
         if download_item.media_metadata["type"] in UPLOADED_VIDEO_MEDIA_TYPE:
             await self.uploaded_video_downloader.download(download_item)

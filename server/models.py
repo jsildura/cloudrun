@@ -31,6 +31,7 @@ class DownloadStage(str, Enum):
     PREPARING = "preparing"
     DOWNLOADING = "downloading"
     DECRYPTING = "decrypting"
+    REMUXING = "remuxing"
     TAGGING = "tagging"
     DONE = "done"
     ERROR = "error"
@@ -47,6 +48,7 @@ class TrackProgress(BaseModel):
     disc_number: int = 0
     disc_total: int = 0
     stage: DownloadStage = DownloadStage.QUEUED
+    stage_detail: str | None = None
     error_message: str | None = None
     file_path: str | None = None
     synced_lyrics_file_path: str | None = None

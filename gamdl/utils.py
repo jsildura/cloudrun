@@ -61,6 +61,25 @@ async def async_subprocess(*args: str, silent: bool = False) -> None:
         raise Exception(f'"{args[0]}" exited with code {returncode}')
 
 
+async def emit_progress(
+    on_progress: typing.Callable[[str, str], typing.Awaitable[None]] | None,
+    stage: str,
+    detail: str,
+) -> None:
+    """Invoke an optional async progress callback, isolating any failure.
+
+    Progress reporting must never interrupt or slow a download, so a raising
+    callback is swallowed here. ``on_progress`` is ``None`` on the CLI path,
+    which makes this a no-op.
+    """
+    if on_progress is None:
+        return
+    try:
+        await on_progress(stage, detail)
+    except Exception:
+        pass
+
+
 async def safe_gather(
     *tasks: typing.Awaitable[typing.Any],
     limit: int = 10,

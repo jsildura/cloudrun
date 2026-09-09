@@ -3,7 +3,7 @@ from pathlib import Path
 from ..interface.enums import MusicVideoCodec, MusicVideoResolution
 from ..interface.interface_music_video import AppleMusicMusicVideoInterface
 from ..interface.types import DecryptionKeyAv, StreamInfoAv
-from ..utils import async_subprocess
+from ..utils import async_subprocess, emit_progress
 from .constants import PLAYLIST_MEDIA_TYPE
 from .downloader_base import AppleMusicBaseDownloader
 from .enums import RemuxFormatMusicVideo, RemuxMode
@@ -106,6 +106,7 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
         decrypted_path_audio: str,
         staged_path: str,
         decryption_key: DecryptionKeyAv,
+        on_progress=None,
     ):
         await self.decrypt_mp4decrypt(
             encrypted_path_video,
@@ -118,6 +119,7 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
             decryption_key.audio_track.key,
         )
 
+        await emit_progress(on_progress, "remuxing", "Remuxing container…")
         if self.remux_mode == RemuxMode.MP4BOX:
             await self.remux_mp4box(
                 decrypted_path_video,
@@ -259,6 +261,7 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
     async def download(
         self,
         download_item: DownloadItem,
+        on_progress=None,
     ) -> None:
         encrypted_path_video = self.get_temp_path(
             download_item.media_metadata["id"],
@@ -273,6 +276,7 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
             ".m4a",
         )
 
+        await emit_progress(on_progress, "downloading", "Downloading video stream…")
         await self.download_stream(
             download_item.stream_info.video_track.stream_url,
             encrypted_path_video,
@@ -295,6 +299,7 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
             ".m4a",
         )
 
+        await emit_progress(on_progress, "decrypting", "Decrypting video & audio…")
         await self.stage(
             encrypted_path_video,
             encrypted_path_audio,
@@ -302,9 +307,11 @@ class AppleMusicMusicVideoDownloader(AppleMusicBaseDownloader):
             decrypted_path_audio,
             download_item.staged_path,
             download_item.decryption_key,
+            on_progress=on_progress,
         )
 
         cover_bytes = await self.interface.get_cover_bytes(download_item.cover_url)
+        await emit_progress(on_progress, "tagging", "Embedding metadata & artwork…")
         await self.apply_tags(
             download_item.staged_path,
             download_item.media_tags,

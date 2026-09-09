@@ -571,6 +571,7 @@
             case 'error': return 'error';
             case 'downloading':
             case 'decrypting':
+            case 'remuxing':
             case 'tagging':
             case 'preparing':
             case 'parsing':
@@ -578,6 +579,17 @@
             default: return 'queued';
         }
     }
+
+    // Per-track "in flight" sub-stages and their coarse progress-bar fill (%).
+    // Ordered downloading → decrypting → remuxing → tagging → done so the bar
+    // advances monotonically as the backend reports each sub-stage over SSE.
+    const ACTIVE_TRACK_STAGES = ['downloading', 'decrypting', 'remuxing', 'tagging'];
+    const STAGE_PROGRESS = { downloading: 25, decrypting: 55, remuxing: 75, tagging: 90, done: 100 };
+
+    function isActiveTrackStage(stage) {
+        return ACTIVE_TRACK_STAGES.includes(stage);
+    }
+
 
     function isSubscriptionOrDrmError(msg) {
         if (!msg || typeof msg !== 'string') return false;
@@ -600,10 +612,10 @@
     function renderTrack(track, jobId, trackIndex) {
         const stageClass = getStageClass(track.stage);
         const stageIcon = getStageIcon(track.stage);
-        const isActive = ['downloading', 'decrypting', 'tagging', 'preparing'].includes(track.stage);
-        const progressWidth = track.stage === 'done' ? 100
-            : isActive ? 50
-                : 0;
+        const isActive = isActiveTrackStage(track.stage) || track.stage === 'preparing';
+        const progressWidth = STAGE_PROGRESS[track.stage] != null
+            ? STAGE_PROGRESS[track.stage]
+            : (isActive ? 50 : 0);
 
         const retryBtn = (track.stage === 'error')
             ? `<button class="track-retry-btn" data-job-id="${jobId}" data-track-index="${trackIndex}" title="Retry">↻</button>`
@@ -631,6 +643,7 @@
                 <div class="track-info">
                     <div class="track-title">${escapeHtml(track.title)}</div>
                     <div class="track-artist">${escapeHtml(track.artist)}${track.album ? ` — ${escapeHtml(track.album)}` : ''}</div>
+                    ${isActive && track.stage_detail ? `<div class="track-stage-detail">${escapeHtml(track.stage_detail)}</div>` : ''}
                     ${isActive ? `
                         <div class="track-progress">
                             <div class="track-progress-bar" style="width: ${progressWidth}%"></div>
@@ -1040,19 +1053,19 @@
         if (totalFetches > 1) {
             // Track progress as each blob resolves
             let fetchedCount = 0;
-            updateFetchStatus(`Processing 0/${totalFetches} files\u2026`, 0);
+            updateFetchStatus(`Fetching track files (0/${totalFetches})\u2026`, 0);
 
             const trackedPromises = allPromises.map(p =>
                 p.then(() => {
                     fetchedCount++;
                     const pct = Math.round((fetchedCount / totalFetches) * 100);
-                    updateFetchStatus(`Processing ${fetchedCount}/${totalFetches} files\u2026`, pct);
+                    updateFetchStatus(`Fetching track files (${fetchedCount}/${totalFetches})\u2026`, pct);
                 })
             );
             await Promise.all(trackedPromises);
         } else {
             // Single file or no files — just wait without granular progress
-            if (totalFetches === 1) updateFetchStatus('Processing file\u2026', 50);
+            if (totalFetches === 1) updateFetchStatus('Fetching track file\u2026', 50);
             await Promise.all(allPromises);
         }
 
@@ -1114,7 +1127,7 @@
                     triggerSave(blob, filename);
                     await new Promise(r => setTimeout(r, 300));
                 }
-                updateFetchStatus('Saved', -1);
+                updateFetchStatus('✓ Saved', -1);
                 if (statusEl) statusEl.className = 'job-status done';
                 // Clean up blobs from memory
                 delete _trackBlobs[job.job_id];
@@ -1126,7 +1139,7 @@
                 return;
             }
 
-            updateFetchStatus('Packaging 0%', 0);
+            updateFetchStatus('Packaging ZIP…', 0);
 
             const zip = new JSZip();
 
@@ -1186,7 +1199,7 @@
                 const track = job.tracks?.[trackIdx];
 
                 // Update status before processing this track
-                updateFetchStatus(`Processing ${t + 1}/${totalTracks} tracks\u2026`, Math.round(((t + 1) / totalTracks) * 100));
+                updateFetchStatus(`Packaging ZIP (${t + 1}/${totalTracks})\u2026`, Math.round(((t + 1) / totalTracks) * 100));
 
                 // Add audio file
                 let zipPath = track?.relative_path || entry.filename;
@@ -1237,7 +1250,7 @@
                 { type: 'blob', compression: 'STORE' },
                 (meta) => {
                     const pct = Math.round(meta.percent);
-                    updateFetchStatus(`Packaging ${pct}%`, pct);
+                    updateFetchStatus(`Compressing ZIP ${pct}%…`, pct);
                 }
             );
 
@@ -1285,11 +1298,11 @@
 
         // Update status to reflect saved state (no more processing animation)
         if (statusEl) {
-            statusEl.textContent = 'Saved';
+            statusEl.textContent = '✓ Saved';
             statusEl.className = 'job-status done';
         }
         if (isPreviewJob) {
-            setStatus(`<span class="status-text">${escapeHtml('Saved ' + finalFilename)}</span>`);
+            setStatus(`<span class="status-text">${escapeHtml('✓ Saved ' + finalFilename)}</span>`);
         }
 
         // Clean up blobs from memory
@@ -1847,21 +1860,33 @@
         }
 
         // Build per-track text list for preparing / downloading / done
+        const isPreviewJob = previewSection.classList.contains('visible');
         let headerText = '';
+        let activeDetail = '';   // active track name + sub-stage (preview jobs only)
         let progressPct = -1; // -1 = no bar
         if (stage === 'preparing') {
             headerText = `Preparing tracks 1\u2013${total}...`;
         } else if (stage === 'downloading') {
             let doneCount = 0;
             let activeCount = 0;
+            let activeTrack = null;
             for (const t of tracks) {
                 if (t.stage === 'done') doneCount++;
-                else if (t.stage === 'downloading' || t.stage === 'decrypting' || t.stage === 'tagging') activeCount++;
+                else if (isActiveTrackStage(t.stage)) {
+                    activeCount++;
+                    if (!activeTrack) activeTrack = t;
+                }
             }
             // Each done track = 1 unit, each in-progress track = ~0.5 unit
             progressPct = total > 0 ? Math.round(((doneCount + activeCount * 0.5) / total) * 100) : 0;
             if (progressPct > 99 && doneCount < total) progressPct = 99;
             headerText = `Downloading ${progressPct}%`;
+            if (activeTrack) {
+                const verb = activeTrack.stage_detail
+                    || `${activeTrack.stage.charAt(0).toUpperCase()}${activeTrack.stage.slice(1)}…`;
+                const name = activeTrack.title || `Track ${activeTrack.track_index + 1}`;
+                activeDetail = `${verb} · ${name}`;
+            }
         } else if (stage === 'done') {
             headerText = 'Ready.';
             progressPct = 100;
@@ -1880,7 +1905,7 @@
             if (t.stage === 'done') {
                 icon = '<span class="status-track-icon done">\u2713</span>';
                 cls += ' done';
-            } else if (t.stage === 'downloading' || t.stage === 'decrypting' || t.stage === 'tagging') {
+            } else if (isActiveTrackStage(t.stage)) {
                 icon = '<span class="status-track-icon active">\u25CF</span>';
                 cls += ' active';
             } else if (t.stage === 'error') {
@@ -1917,11 +1942,21 @@
             `;
         }
 
+        // Preview jobs show live per-track state directly in the preview
+        // tracklist (updatePreviewTracksFromJob), so the status bar carries only
+        // the active track + sub-stage and drops the duplicate track list.
+        const detailHtml = (isPreviewJob && activeDetail)
+            ? `<div class="status-active-detail">${escapeHtml(activeDetail)}</div>`
+            : '';
+        const listHtml = (!isPreviewJob && trackLines)
+            ? `<div class="status-track-list">${trackLines}</div>`
+            : '';
         const html = `<span class="status-text">${escapeHtml(headerText)}</span>`
             + progressBar
+            + detailHtml
             + cancelHtml
             + drmNotice
-            + (trackLines ? `<div class="status-track-list">${trackLines}</div>` : '');
+            + listHtml;
         setStatus(html);
 
         // Re-enable button on terminal states
@@ -1933,6 +1968,54 @@
             urlInput.disabled = false;
             btnSubmit.disabled = false;
             if (btnPaste) btnPaste.disabled = false;
+        }
+    }
+
+    // Paint live per-track sub-stage badges onto the visible preview tracklist.
+    // Each job track maps back to its preview row: with a track subset the job
+    // carries selected_tracks (original preview indices, same order as
+    // job.tracks); otherwise the job covers every preview row 1:1.
+    function updatePreviewTracksFromJob(job) {
+        if (!previewTracks) return;
+        const tracks = job.tracks || [];
+        const labels = {
+            downloading: 'Downloading',
+            decrypting: 'Decrypting',
+            remuxing: 'Remuxing',
+            tagging: 'Tagging',
+        };
+        const canMap = Array.isArray(job.selected_tracks)
+            && job.selected_tracks.length === tracks.length;
+
+        for (let i = 0; i < tracks.length; i++) {
+            const t = tracks[i];
+            const previewIdx = canMap ? job.selected_tracks[i] : i;
+            const row = previewTracks.querySelector(
+                `.preview-track-item[data-track-idx="${previewIdx}"]`
+            );
+            if (!row) continue;
+
+            let label = '', cls = '';
+            if (t.stage === 'done') { label = '✓'; cls = 'done'; }
+            else if (t.stage === 'error') { label = 'Failed'; cls = 'error'; }
+            else if (labels[t.stage]) { label = labels[t.stage]; cls = 'active'; }
+
+            let badge = row.querySelector('.preview-track-status');
+            if (!label) {
+                // Back to queued/idle → drop the badge and restore the duration.
+                if (badge) badge.remove();
+                row.classList.remove('has-status');
+                continue;
+            }
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.className = 'preview-track-status';
+                const dur = row.querySelector('.preview-track-duration');
+                if (dur) row.insertBefore(badge, dur); else row.appendChild(badge);
+            }
+            badge.textContent = label;
+            badge.className = `preview-track-status ${cls}`;
+            row.classList.add('has-status');
         }
     }
 
@@ -2515,6 +2598,9 @@
         // Update status container for the job linked to the current preview
         if (data.job_id === _activeJobId) {
             updateStatusFromJob(data);
+            if (previewSection.classList.contains('visible')) {
+                updatePreviewTracksFromJob(data);
+            }
         }
 
         // Only process blob fetching and auto-save for jobs started in this session
