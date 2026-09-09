@@ -21,6 +21,7 @@
 
     const queueSection = $('#queue-section');
     const queueList = $('#queue-list');
+    const queueSummary = $('#queue-summary');
 
     // History section
     const historySection = $('#history-section');
@@ -45,6 +46,7 @@
     const previewFooter = $('#preview-footer');
     const previewDownloadBtn = $('#preview-download-btn');
     const previewSaveArtworkBtn = $('#preview-save-artwork-btn');
+    const previewCloseBtn = $('#preview-close-btn');
 
     // Settings modal
     const modalSettings = $('#modal-settings');
@@ -82,7 +84,7 @@
     let isSubmitting = false;
     let _previewUrl = null;     // URL currently shown in preview
     let _previewMediaType = null; // 'song', 'album', or 'playlist'
-    let _activeJobId = null;    // Job ID linked to current preview
+    let _focusedJobId = null;    // Job the status bar shows detailed progress for (preview / most-recent)
     const _trackBlobs = {};     // jobId → { trackIndex: { blob, filename } }
     const _blobPromises = {};   // jobId → { trackIndex: Promise }
     const _lyricsBlobs = {};    // jobId → { trackIndex: { blob, filename } }
@@ -91,6 +93,7 @@
     const _coverBlobPromises = {};   // jobId → { filename: Promise }
     const _savedJobs = new Set(); // Jobs that already triggered auto-save
     const _activeJobs = new Set(); // Jobs started in THIS browser session (not replayed)
+    let _queueRevealed = false;   // Whether the Download Queue section has been shown this session
 
     // ── Track Selection State ─────────────────────────────────────────────
     let _isEditMode = false;           // Whether checkboxes are visible
@@ -665,13 +668,13 @@
         if (existing) {
             // ── In-place update: avoid full DOM rebuild to prevent flicker ──
             const statusEl = existing.querySelector('.job-status');
-            const statusLabel = job.stage === 'downloading'
-                ? `${job.current_track}/${job.total_tracks}`
-                : job.stage;
             if (statusEl) {
-                statusEl.textContent = statusLabel;
+                statusEl.textContent = jobStatusLabel(job);
                 statusEl.className = `job-status ${job.stage}`;
             }
+
+            // Show/hide the per-card cancel button as the stage changes.
+            syncJobCancelBtn(existing, job);
 
             // Update tracks in-place
             const tracksContainer = existing.querySelector('.job-tracks');
@@ -717,11 +720,6 @@
 
         // ── First render: create the card ──
         const tracksHtml = job.tracks.map((t, i) => renderTrack(t, job.job_id, i)).join('');
-        const statusLabel = job.stage === 'downloading'
-            ? `${job.current_track}/${job.total_tracks}`
-            : job.stage;
-
-
 
         const hasErrors = job.tracks.some(t => t.stage === 'error');
         const retryAllBtn = hasErrors
@@ -732,7 +730,8 @@
             <div class="job-card expanded" data-job-id="${job.job_id}">
                 <div class="job-header">
                     <span class="job-url" title="${escapeHtml(job.url)}">${escapeHtml(job.url)}</span>
-                    <span class="job-status ${job.stage}">${statusLabel}</span>
+                    <span class="job-status ${job.stage}">${jobStatusLabel(job)}</span>
+                    ${jobCancelBtnHtml(job)}
                 </div>
                 <div class="job-tracks">
                     ${tracksHtml || '<div class="track-item"><div class="track-info"><div class="track-title">Loading tracks…</div></div></div>'}
@@ -746,7 +745,9 @@
         // Attach listeners
         const card = $(`[data-job-id="${job.job_id}"]`);
         if (card) {
-            card.querySelector('.job-header').addEventListener('click', () => {
+            card.querySelector('.job-header').addEventListener('click', (e) => {
+                // Let the cancel button's own handler deal with its clicks.
+                if (e.target.closest('.job-cancel-btn')) return;
                 card.classList.toggle('expanded');
             });
             attachRetryAllHandler(card, job.job_id);
@@ -773,6 +774,126 @@
                 }
             });
         }
+    }
+
+    // ── Download Queue: reveal + aggregate summary ───────────────────────────
+
+    const TERMINAL_STAGES = ['done', 'error', 'cancelled'];
+
+    // Human label for a job card's status pill.
+    function jobStatusLabel(job) {
+        if (job.stage === 'downloading') return `${job.current_track}/${job.total_tracks}`;
+        if (job.stage === 'queued') {
+            return job.queue_position ? `queued · #${job.queue_position}` : 'queued';
+        }
+        return job.stage;
+    }
+
+    // A job can be cancelled while it is still working or waiting for a slot.
+    function jobIsCancellable(job) {
+        return !TERMINAL_STAGES.includes(job.stage);
+    }
+
+    function jobCancelBtnHtml(job) {
+        return jobIsCancellable(job)
+            ? `<button class="job-cancel-btn" data-job-id="${job.job_id}" title="Cancel this download" aria-label="Cancel download">✕</button>`
+            : '';
+    }
+
+    // Add or remove a card's cancel button as its stage changes.
+    function syncJobCancelBtn(card, job) {
+        const header = card.querySelector('.job-header');
+        if (!header) return;
+        const btn = header.querySelector('.job-cancel-btn');
+        if (jobIsCancellable(job)) {
+            if (!btn) header.insertAdjacentHTML('beforeend', jobCancelBtnHtml(job));
+        } else if (btn) {
+            btn.remove();
+        }
+    }
+
+    // Count jobs that are still working or waiting (not terminal).
+    function activeJobCount() {
+        return Object.values(jobs).filter(j => !TERMINAL_STAGES.includes(j.stage)).length;
+    }
+
+    // Make the Download Queue section visible (it ships hidden). Sticky for the
+    // session: once the user is juggling multiple jobs we keep the queue on
+    // screen so it behaves like a real, browsable queue.
+    function revealQueue() {
+        _queueRevealed = true;
+        if (queueSection) queueSection.style.display = 'block';
+        renderQueueSummary();
+    }
+
+    // A lone focused preview download stays represented by the status bar only;
+    // reveal the queue as soon as there is more than one job to manage.
+    function maybeRevealQueue() {
+        if (_queueRevealed || activeJobCount() > 1) {
+            revealQueue();
+        } else {
+            renderQueueSummary();
+        }
+    }
+
+    // Render the compact "N downloading · M queued · K done" chip in the queue
+    // header from every job we know about.
+    function renderQueueSummary() {
+        if (!queueSummary) return;
+        const vals = Object.values(jobs);
+        if (!vals.length) {
+            queueSummary.hidden = true;
+            return;
+        }
+        let downloading = 0, queued = 0, done = 0, failed = 0;
+        for (const j of vals) {
+            if (j.stage === 'queued') queued++;
+            else if (j.stage === 'done') done++;
+            else if (j.stage === 'error' || j.stage === 'cancelled') failed++;
+            else downloading++; // parsing/preparing/downloading/decrypting/…
+        }
+        const parts = [];
+        if (downloading) parts.push(`${downloading} downloading`);
+        if (queued) parts.push(`${queued} queued`);
+        if (done) parts.push(`${done} done`);
+        if (failed) parts.push(`${failed} failed`);
+        queueSummary.textContent = parts.join(' · ');
+        queueSummary.hidden = parts.length === 0;
+    }
+
+    // ── Multi-link batch queueing ────────────────────────────────────────────
+
+    // Non-anchored + global so it finds EVERY Apple Music URL in a multi-line
+    // or space-separated blob (contrast the single-URL paste validator).
+    const APPLE_URL_RE = /https?:\/\/music\.apple\.com\/[^\s]+\/(?:album|song|playlist|music-video|post)\/[^\s]+/gi;
+
+    function extractAppleUrls(text) {
+        if (!text) return [];
+        const matches = text.match(APPLE_URL_RE) || [];
+        return [...new Set(matches.map(u => u.trim()))];
+    }
+
+    // Fire-and-forget: submit each link straight to the server queue (all
+    // tracks, no preview). The server semaphore serializes execution.
+    async function enqueueBatch(urls) {
+        const userCfg = loadLocalSettings();
+        let ok = 0;
+        for (const url of urls) {
+            try {
+                const job = await api.startDownload(url, userCfg, null);
+                _activeJobs.add(job.job_id);
+                jobs[job.job_id] = job;
+                renderJob(job);
+                ok++;
+            } catch (e) {
+                toast(`Failed to queue ${url}: ${e.message || e}`, 'error');
+            }
+        }
+        if (ok) {
+            urlInput.value = '';
+            toast(`Queued ${ok} link${ok > 1 ? 's' : ''}`, 'success');
+        }
+        revealQueue();
     }
 
     // ── Blob storage & save helpers ─────────────────────────────────────
@@ -1022,7 +1143,10 @@
      * browser's native save dialog automatically — no extra click needed.
      */
     async function prepareSaveLink(job) {
-        const isPreviewJob = previewSection.classList.contains('visible');
+        // Only the focused preview job may drive the status bar / borrow preview
+        // metadata. Background & batch jobs report solely through their own card.
+        const isFocusedPreview = previewSection.classList.contains('visible')
+            && job.job_id === _focusedJobId;
         const totalTracks = job.tracks ? job.tracks.length : 0;
 
         // Helper to update both card status and preview status together
@@ -1031,7 +1155,7 @@
 
         function updateFetchStatus(text, pct) {
             if (statusEl) statusEl.textContent = text;
-            if (isPreviewJob) {
+            if (isFocusedPreview) {
                 const progressBar = pct >= 0
                     ? `<div class="status-progress-bar processing"><div class="status-progress-fill" style="width:${pct}%"></div></div>`
                     : '';
@@ -1255,10 +1379,12 @@
             );
 
             // Build ZIP filename from user template based on media type
-            const previewName = previewTitle?.textContent?.trim();
-            const previewArtistName = previewArtist?.textContent?.trim();
             const first = job.tracks[0];
-            const mediaType = _previewMediaType || (job.tracks.length === 1 ? 'song' : 'album');
+            const previewName = isFocusedPreview ? previewTitle?.textContent?.trim() : '';
+            const previewArtistName = isFocusedPreview ? previewArtist?.textContent?.trim() : '';
+            const mediaType = (isFocusedPreview && _previewMediaType)
+                || job.media_type
+                || (job.tracks.length === 1 ? 'song' : 'album');
 
             // Pick the right template
             let tpl;
@@ -1301,7 +1427,7 @@
             statusEl.textContent = '✓ Saved';
             statusEl.className = 'job-status done';
         }
-        if (isPreviewJob) {
+        if (isFocusedPreview) {
             setStatus(`<span class="status-text">${escapeHtml('✓ Saved ' + finalFilename)}</span>`);
         }
 
@@ -1321,15 +1447,17 @@
 
         // ── Record download to Firestore (fire-and-forget) ──
         if (typeof addDownloadHistory === 'function') {
-            const mediaType = _previewMediaType || (job.tracks?.length === 1 ? 'song' : 'album');
+            const mediaType = (isFocusedPreview && _previewMediaType)
+                || job.media_type
+                || (job.tracks?.length === 1 ? 'song' : 'album');
             const typeLabel = mediaType === 'song' ? 'Track'
                 : mediaType === 'playlist' ? 'Playlist'
                     : mediaType === 'music-video' ? 'Music Video'
                         : 'Album';
             const userCfg = loadLocalSettings();
             const historyItem = {
-                title: previewTitle?.textContent?.trim() || job.tracks?.[0]?.title || 'Unknown',
-                artist: previewArtist?.textContent?.trim() || job.tracks?.[0]?.artist || 'Unknown',
+                title: (isFocusedPreview ? previewTitle?.textContent?.trim() : '') || job.tracks?.[0]?.title || 'Unknown',
+                artist: (isFocusedPreview ? previewArtist?.textContent?.trim() : '') || job.tracks?.[0]?.artist || 'Unknown',
                 type: typeLabel,
                 codec: getCodecLabel(userCfg.song_codec),
                 date: new Date().toLocaleDateString() + ' ' +
@@ -1607,10 +1735,8 @@
         previewSection.classList.add('visible');
         previewDownloadBtn.disabled = false;
 
-        // Gray out input bar while preview is active
-        urlInput.disabled = true;
-        btnSubmit.disabled = true;
-        if (btnPaste) btnPaste.disabled = true;
+        // Input bar stays live at all times so the user can stage or batch
+        // more links while this preview (and any running downloads) continue.
     }
 
     // ── Track Selection Logic ─────────────────────────────────────────────
@@ -1800,7 +1926,7 @@
         previewSection.classList.remove('visible');
         _previewUrl = null;
         _previewMediaType = null;
-        _activeJobId = null;
+        _focusedJobId = null;
         previewCard.style.removeProperty('--preview-bg');
         clearStatus();
 
@@ -1847,7 +1973,9 @@
 
 
         if (stage === 'queued') {
-            setStatusText('Queued...');
+            setStatusText(job.queue_position
+                ? `Queued · position ${job.queue_position}…`
+                : 'Queued…');
             return;
         }
         if (stage === 'parsing') {
@@ -1962,12 +2090,8 @@
         // Re-enable button on terminal states
         if (stage === 'done' || stage === 'error' || stage === 'cancelled') {
             previewDownloadBtn.disabled = false;
-            _activeJobId = null;
-
-            // Re-enable input bar
-            urlInput.disabled = false;
-            btnSubmit.disabled = false;
-            if (btnPaste) btnPaste.disabled = false;
+            _focusedJobId = null;
+            // Input bar is never disabled, so nothing to re-enable here.
         }
     }
 
@@ -2022,28 +2146,29 @@
 
     // ── Event handlers ────────────────────────────────────────────────────
 
-    // URL input change — clear preview when user types a new URL
-    urlInput.addEventListener('input', () => {
-        if (_previewUrl && urlInput.value.trim() !== _previewUrl) {
-            hidePreview();
-        }
-    });
+    // The preview is a non-destructive staging area: typing or pasting a new
+    // link never tears down an existing preview or a running download. The
+    // preview is replaced only on the next successful submit, or dismissed via
+    // its own close control. (Previously every keystroke called hidePreview.)
 
-    // Paste button — read clipboard and validate Apple Music URL
+    // Paste button — read clipboard; 1 link → preview, 2+ links → batch queue.
     if (btnPaste) {
         btnPaste.addEventListener('click', async () => {
+            let text;
             try {
-                const text = (await navigator.clipboard.readText()).trim();
-                const appleMusicPattern = /^https?:\/\/music\.apple\.com\/.+\/(album|song|playlist|music-video|post)\//i;
-                if (appleMusicPattern.test(text)) {
-                    urlInput.value = text;
-                    urlInput.dispatchEvent(new Event('input'));
-                    urlInput.focus();
-                } else {
-                    toast('Clipboard does not contain an Apple Music URL', 'error');
-                }
+                text = (await navigator.clipboard.readText()).trim();
             } catch (err) {
                 toast('Unable to read clipboard', 'error');
+                return;
+            }
+            const urls = extractAppleUrls(text);
+            if (urls.length === 0) {
+                toast('Clipboard does not contain an Apple Music URL', 'error');
+            } else if (urls.length === 1) {
+                urlInput.value = urls[0];
+                urlInput.focus();
+            } else {
+                enqueueBatch(urls);
             }
         });
     }
@@ -2051,18 +2176,26 @@
     urlForm.addEventListener('submit', async (e) => {
         e.preventDefault();
 
-        const url = urlInput.value.trim();
-        if (!url || isSubmitting) return;
+        const raw = urlInput.value.trim();
+        if (!raw || isSubmitting) return;
 
+        // Multiple links → skip preview, fire them straight into the queue.
+        const urls = extractAppleUrls(raw);
+        if (urls.length >= 2) {
+            enqueueBatch(urls);
+            return;
+        }
+
+        // Single link → preview (with per-track selection). The input bar stays
+        // live throughout so more links can be staged or batched.
         isSubmitting = true;
         btnSubmit.disabled = true;
-        if (btnPaste) btnPaste.disabled = true;
         btnSubmit.textContent = 'Loading…';
         setStatusText('Loading...');
 
         try {
             const userCfg = loadLocalSettings();
-            const data = await api.previewUrl(url, userCfg);
+            const data = await api.previewUrl(raw, userCfg);
             clearStatus();
             showPreview(data);
         } catch (e) {
@@ -2070,12 +2203,7 @@
             toast(e.message || 'Failed to load preview', 'error');
         } finally {
             isSubmitting = false;
-            // Only re-enable if preview isn't active (e.g. on error)
-            if (!previewSection.classList.contains('visible')) {
-                btnSubmit.disabled = false;
-                urlInput.disabled = false;
-                if (btnPaste) btnPaste.disabled = false;
-            }
+            btnSubmit.disabled = false;
             btnSubmit.textContent = 'Preview';
         }
     });
@@ -2140,14 +2268,21 @@
         }
     });
 
+    // Preview close button — dismiss the staged preview (any download it
+    // already started keeps running as its own queue card).
+    if (previewCloseBtn) {
+        previewCloseBtn.addEventListener('click', () => {
+            hidePreview();
+        });
+    }
+
     // Preview download button — triggers actual download
     previewDownloadBtn.addEventListener('click', async () => {
         if (!_previewUrl) return;
 
+        // Disable only this button (guards against enqueuing the staged link
+        // twice). The input bar stays live so more links can be added.
         previewDownloadBtn.disabled = true;
-        urlInput.disabled = true;
-        btnSubmit.disabled = true;
-        if (btnPaste) btnPaste.disabled = true;
         setStatusText('Starting download...');
 
         // Detach direct download link from previous download immediately
@@ -2160,15 +2295,14 @@
             const userCfg = loadLocalSettings();
             const job = await api.startDownload(_previewUrl, userCfg, _finalizedSelection);
             _activeJobs.add(job.job_id);
-            _activeJobId = job.job_id;
+            _focusedJobId = job.job_id;
             jobs[job.job_id] = job;
             renderJob(job);
+            maybeRevealQueue();
             // Preview stays visible — status container shows progress
         } catch (e) {
             toast(e.message || 'Download failed', 'error');
             previewDownloadBtn.disabled = false;
-            urlInput.disabled = false;
-            btnSubmit.disabled = false;
             clearStatus();
         }
     });
@@ -2176,12 +2310,12 @@
     // Cancel text — delegated click handler on status container
     statusContainer.addEventListener('click', async (e) => {
         const cancelEl = e.target.closest('.status-cancel-text');
-        if (!cancelEl || !_activeJobId) return;
+        if (!cancelEl || !_focusedJobId) return;
 
         cancelEl.style.pointerEvents = 'none';
         cancelEl.style.opacity = '0.4';
         try {
-            await api.cancelDownload(_activeJobId);
+            await api.cancelDownload(_focusedJobId);
             toast('Download cancelled', 'info');
         } catch (err) {
             toast(err.message || 'Cancel failed', 'error');
@@ -2190,6 +2324,25 @@
 
     // Individual track retry buttons (delegated)
     queueList.addEventListener('click', async (e) => {
+        // Per-card cancel button
+        const cancelBtn = e.target.closest('.job-cancel-btn');
+        if (cancelBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            const jobId = cancelBtn.dataset.jobId;
+            cancelBtn.disabled = true;
+            cancelBtn.style.opacity = '0.4';
+            try {
+                await api.cancelDownload(jobId);
+                toast('Download cancelled', 'info');
+            } catch (err) {
+                toast(err.message || 'Cancel failed', 'error');
+                cancelBtn.disabled = false;
+                cancelBtn.style.opacity = '';
+            }
+            return;
+        }
+
         // Individual track retry buttons
         const retryBtn = e.target.closest('.track-retry-btn');
         if (retryBtn) {
@@ -2588,15 +2741,17 @@
         _activeJobs.add(data.job_id);  // Mark new jobs as active
         jobs[data.job_id] = data;
         renderJob(data);
+        maybeRevealQueue();
     });
 
     eventStream.on('job_update', (data) => {
         const prevJob = jobs[data.job_id];
         jobs[data.job_id] = data;
         renderJob(data);
+        maybeRevealQueue();
 
         // Update status container for the job linked to the current preview
-        if (data.job_id === _activeJobId) {
+        if (data.job_id === _focusedJobId) {
             updateStatusFromJob(data);
             if (previewSection.classList.contains('visible')) {
                 updatePreviewTracksFromJob(data);
@@ -2752,6 +2907,11 @@
                         _savedJobs.add(job.job_id);
                     }
                 }
+                // If a download was already in flight when the page loaded,
+                // surface the queue — there's no preview/status-bar context on
+                // a fresh load, so otherwise it would be invisible.
+                if (activeJobCount() > 0) revealQueue();
+                else renderQueueSummary();
             } catch (e) {
                 console.error('Failed to load downloads:', e);
             }

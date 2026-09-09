@@ -890,13 +890,7 @@ class DownloadManager:
             # Add to global waiting list for position tracking
             _waiting_jobs.append((job_id, job))
             job.stage = DownloadStage.QUEUED
-            position = len(_waiting_jobs)
-            job.error_message = (
-                f"Position {position} in queue \u2014 "
-                f"the server is currently processing other downloads. "
-                f"Your download will start automatically in just a moment. "
-                f"Please keep this page open."
-            )
+            job.queue_position = len(_waiting_jobs)
             await self._broadcast_job(job)
 
             # Update queue position every 3s while waiting
@@ -905,13 +899,7 @@ class DownloadManager:
                     await asyncio.sleep(3)
                     if (job_id, job) not in _waiting_jobs:
                         break
-                    pos = _waiting_jobs.index((job_id, job)) + 1
-                    job.error_message = (
-                        f"Position {pos} in queue \u2014 "
-                        f"the server is currently processing other downloads. "
-                        f"Your download will start automatically in just a moment. "
-                        f"Please keep this page open."
-                    )
+                    job.queue_position = _waiting_jobs.index((job_id, job)) + 1
                     await self._broadcast_job(job)
 
             position_task = asyncio.create_task(_update_position())
@@ -947,6 +935,7 @@ class DownloadManager:
             pass  # Was never queued (semaphore was free)
         try:
             job.error_message = None  # Clear queue message
+            job.queue_position = None  # No longer waiting for a slot
             job.last_active_time = time.time()
             # Dynamic timeout: collections with many tracks need ample time.
             # Base 1800s (30m) + up to 180s per track for rate limits and decryption.

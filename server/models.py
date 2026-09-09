@@ -69,6 +69,7 @@ class DownloadJob(BaseModel):
     animated_artwork_urls: list[str] = []
     selected_tracks: list[int] | None = None
     last_active_time: float | None = None
+    queue_position: int | None = None   # 1-based position while waiting for a slot; None once running/terminal
 
 
 # ── Preview ──────────────────────────────────────────────────────────────────
