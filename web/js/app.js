@@ -12,16 +12,13 @@
     const $$ = (sel) => document.querySelectorAll(sel);
 
     const urlForm = $('#url-form');
+    const urlInputWrap = $('.url-input-wrap');
     const urlInput = $('#url-input');
     const btnSubmit = $('#btn-submit');
     const btnPaste = $('#btn-paste');
     const btnSettings = $('#btn-settings');
     const btnInfo = $('#btn-info');
     const authBadge = $('#auth-badge');
-
-    const queueSection = $('#queue-section');
-    const queueList = $('#queue-list');
-    const queueSummary = $('#queue-summary');
 
     // History section
     const historySection = $('#history-section');
@@ -46,7 +43,6 @@
     const previewFooter = $('#preview-footer');
     const previewDownloadBtn = $('#preview-download-btn');
     const previewSaveArtworkBtn = $('#preview-save-artwork-btn');
-    const previewCloseBtn = $('#preview-close-btn');
 
     // Settings modal
     const modalSettings = $('#modal-settings');
@@ -93,7 +89,6 @@
     const _coverBlobPromises = {};   // jobId → { filename: Promise }
     const _savedJobs = new Set(); // Jobs that already triggered auto-save
     const _activeJobs = new Set(); // Jobs started in THIS browser session (not replayed)
-    let _queueRevealed = false;   // Whether the Download Queue section has been shown this session
 
     // ── Track Selection State ─────────────────────────────────────────────
     let _isEditMode = false;           // Whether checkboxes are visible
@@ -558,31 +553,6 @@
 
     // ── Download queue rendering ──────────────────────────────────────────
 
-    function getStageIcon(stage) {
-        switch (stage) {
-            case 'done': return '✓';
-            case 'error': return '✗';
-            case 'cancelled': return '—';
-            case 'queued': return '·';
-            default: return '↻';
-        }
-    }
-
-    function getStageClass(stage) {
-        switch (stage) {
-            case 'done': return 'done';
-            case 'error': return 'error';
-            case 'downloading':
-            case 'decrypting':
-            case 'remuxing':
-            case 'tagging':
-            case 'preparing':
-            case 'parsing':
-                return 'downloading';
-            default: return 'queued';
-        }
-    }
-
     // Per-track "in flight" sub-stages and their coarse progress-bar fill (%).
     // Ordered downloading → decrypting → remuxing → tagging → done so the bar
     // advances monotonically as the backend reports each sub-stage over SSE.
@@ -592,7 +562,6 @@
     function isActiveTrackStage(stage) {
         return ACTIVE_TRACK_STAGES.includes(stage);
     }
-
 
     function isSubscriptionOrDrmError(msg) {
         if (!msg || typeof msg !== 'string') return false;
@@ -610,290 +579,6 @@
             lower.includes('401') ||
             lower.includes('not available in the selected codec')
         );
-    }
-
-    function renderTrack(track, jobId, trackIndex) {
-        const stageClass = getStageClass(track.stage);
-        const stageIcon = getStageIcon(track.stage);
-        const isActive = isActiveTrackStage(track.stage) || track.stage === 'preparing';
-        const progressWidth = STAGE_PROGRESS[track.stage] != null
-            ? STAGE_PROGRESS[track.stage]
-            : (isActive ? 50 : 0);
-
-        const retryBtn = (track.stage === 'error')
-            ? `<button class="track-retry-btn" data-job-id="${jobId}" data-track-index="${trackIndex}" title="Retry">↻</button>`
-            : '';
-
-        let errorHtml = '';
-        if (track.error_message) {
-            if (isSubscriptionOrDrmError(track.error_message)) {
-                errorHtml = `
-                    <div class="track-drm-error-wrap">
-                        <div class="track-artist" style="color: var(--error)">${escapeHtml(track.error_message)}</div>
-                        <a href="https://music.apple.com/" target="_blank" rel="noopener" class="btn-sub-trial">This format requires an active subscription. <strong>Try Apple Music Free &#x2197;</strong></a>
-                    </div>
-                `;
-            } else {
-                errorHtml = `<div class="track-artist" style="color: var(--error)">${escapeHtml(track.error_message)}</div>`;
-            }
-        }
-
-        return `
-            <div class="track-item">
-                <div class="track-cover">
-                    ${track.cover_url ? `<img src="${escapeHtml(track.cover_url)}" alt="" loading="lazy">` : ''}
-                </div>
-                <div class="track-info">
-                    <div class="track-title">${escapeHtml(track.title)}</div>
-                    <div class="track-artist">${escapeHtml(track.artist)}${track.album ? ` — ${escapeHtml(track.album)}` : ''}</div>
-                    ${isActive && track.stage_detail ? `<div class="track-stage-detail">${escapeHtml(track.stage_detail)}</div>` : ''}
-                    ${isActive ? `
-                        <div class="track-progress">
-                            <div class="track-progress-bar" style="width: ${progressWidth}%"></div>
-                        </div>
-                    ` : ''}
-                    ${errorHtml}
-                </div>
-                ${retryBtn}
-                <div class="track-status-icon ${stageClass}" title="${track.stage}">
-                    ${stageIcon}
-                </div>
-            </div>
-        `;
-    }
-
-    function renderJob(job) {
-        const existing = $(`[data-job-id="${job.job_id}"]`);
-
-        if (existing) {
-            // ── In-place update: avoid full DOM rebuild to prevent flicker ──
-            const statusEl = existing.querySelector('.job-status');
-            if (statusEl) {
-                statusEl.textContent = jobStatusLabel(job);
-                statusEl.className = `job-status ${job.stage}`;
-            }
-
-            // Show/hide the per-card cancel button as the stage changes.
-            syncJobCancelBtn(existing, job);
-
-            // Update tracks in-place
-            const tracksContainer = existing.querySelector('.job-tracks');
-            if (tracksContainer && job.tracks.length) {
-                // Get existing track items
-                const existingTracks = tracksContainer.querySelectorAll('.track-item');
-
-                job.tracks.forEach((track, i) => {
-                    const newHtml = renderTrack(track, job.job_id, i);
-                    if (existingTracks[i]) {
-                        // Compare and only replace if changed
-                        const temp = document.createElement('div');
-                        temp.innerHTML = newHtml.trim();
-                        const newEl = temp.firstElementChild;
-                        if (existingTracks[i].innerHTML !== newEl.innerHTML) {
-                            existingTracks[i].replaceWith(newEl);
-                        }
-                    } else {
-                        // New track — append to tracks container
-                        const temp = document.createElement('div');
-                        temp.innerHTML = newHtml.trim();
-                        tracksContainer.appendChild(temp.firstElementChild);
-                    }
-                });
-
-
-
-                // Add/remove Retry All button
-                const hasErrors = job.tracks.some(t => t.stage === 'error');
-                const jobDoneOrError = ['done', 'error'].includes(job.stage);
-                let retryAllDiv = tracksContainer.querySelector('.job-retry-all');
-                if (hasErrors && jobDoneOrError && !retryAllDiv) {
-                    tracksContainer.insertAdjacentHTML('beforeend',
-                        `<div class="job-retry-all"><button class="btn-retry-all" data-job-id="${job.job_id}">↻ Retry All Failed</button></div>`
-                    );
-                    attachRetryAllHandler(existing, job.job_id);
-                } else if ((!hasErrors || !jobDoneOrError) && retryAllDiv) {
-                    retryAllDiv.remove();
-                }
-            }
-            return;
-        }
-
-        // ── First render: create the card ──
-        const tracksHtml = job.tracks.map((t, i) => renderTrack(t, job.job_id, i)).join('');
-
-        const hasErrors = job.tracks.some(t => t.stage === 'error');
-        const retryAllBtn = hasErrors
-            ? `<div class="job-retry-all"><button class="btn-retry-all" data-job-id="${job.job_id}">↻ Retry All Failed</button></div>`
-            : '';
-
-        const html = `
-            <div class="job-card expanded" data-job-id="${job.job_id}">
-                <div class="job-header">
-                    <span class="job-url" title="${escapeHtml(job.url)}">${escapeHtml(job.url)}</span>
-                    <span class="job-status ${job.stage}">${jobStatusLabel(job)}</span>
-                    ${jobCancelBtnHtml(job)}
-                </div>
-                <div class="job-tracks">
-                    ${tracksHtml || '<div class="track-item"><div class="track-info"><div class="track-title">Loading tracks…</div></div></div>'}
-                    ${retryAllBtn}
-                </div>
-            </div>
-        `;
-
-        queueList.insertAdjacentHTML('afterbegin', html);
-
-        // Attach listeners
-        const card = $(`[data-job-id="${job.job_id}"]`);
-        if (card) {
-            card.querySelector('.job-header').addEventListener('click', (e) => {
-                // Let the cancel button's own handler deal with its clicks.
-                if (e.target.closest('.job-cancel-btn')) return;
-                card.classList.toggle('expanded');
-            });
-            attachRetryAllHandler(card, job.job_id);
-        }
-
-    }
-
-
-
-    function attachRetryAllHandler(card, jobId) {
-        const retryAllBtn = card.querySelector('.btn-retry-all');
-        if (retryAllBtn) {
-            retryAllBtn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                retryAllBtn.disabled = true;
-                retryAllBtn.textContent = 'Retrying…';
-                try {
-                    await api.retryAllFailed(jobId);
-                    toast('Retrying all failed tracks…', 'info');
-                } catch (err) {
-                    toast('Retry failed: ' + err.message, 'error');
-                    retryAllBtn.disabled = false;
-                    retryAllBtn.textContent = '↻ Retry All Failed';
-                }
-            });
-        }
-    }
-
-    // ── Download Queue: reveal + aggregate summary ───────────────────────────
-
-    const TERMINAL_STAGES = ['done', 'error', 'cancelled'];
-
-    // Human label for a job card's status pill.
-    function jobStatusLabel(job) {
-        if (job.stage === 'downloading') return `${job.current_track}/${job.total_tracks}`;
-        if (job.stage === 'queued') {
-            return job.queue_position ? `queued · #${job.queue_position}` : 'queued';
-        }
-        return job.stage;
-    }
-
-    // A job can be cancelled while it is still working or waiting for a slot.
-    function jobIsCancellable(job) {
-        return !TERMINAL_STAGES.includes(job.stage);
-    }
-
-    function jobCancelBtnHtml(job) {
-        return jobIsCancellable(job)
-            ? `<button class="job-cancel-btn" data-job-id="${job.job_id}" title="Cancel this download" aria-label="Cancel download">✕</button>`
-            : '';
-    }
-
-    // Add or remove a card's cancel button as its stage changes.
-    function syncJobCancelBtn(card, job) {
-        const header = card.querySelector('.job-header');
-        if (!header) return;
-        const btn = header.querySelector('.job-cancel-btn');
-        if (jobIsCancellable(job)) {
-            if (!btn) header.insertAdjacentHTML('beforeend', jobCancelBtnHtml(job));
-        } else if (btn) {
-            btn.remove();
-        }
-    }
-
-    // Count jobs that are still working or waiting (not terminal).
-    function activeJobCount() {
-        return Object.values(jobs).filter(j => !TERMINAL_STAGES.includes(j.stage)).length;
-    }
-
-    // Make the Download Queue section visible (it ships hidden). Sticky for the
-    // session: once the user is juggling multiple jobs we keep the queue on
-    // screen so it behaves like a real, browsable queue.
-    function revealQueue() {
-        _queueRevealed = true;
-        if (queueSection) queueSection.style.display = 'block';
-        renderQueueSummary();
-    }
-
-    // A lone focused preview download stays represented by the status bar only;
-    // reveal the queue as soon as there is more than one job to manage.
-    function maybeRevealQueue() {
-        if (_queueRevealed || activeJobCount() > 1) {
-            revealQueue();
-        } else {
-            renderQueueSummary();
-        }
-    }
-
-    // Render the compact "N downloading · M queued · K done" chip in the queue
-    // header from every job we know about.
-    function renderQueueSummary() {
-        if (!queueSummary) return;
-        const vals = Object.values(jobs);
-        if (!vals.length) {
-            queueSummary.hidden = true;
-            return;
-        }
-        let downloading = 0, queued = 0, done = 0, failed = 0;
-        for (const j of vals) {
-            if (j.stage === 'queued') queued++;
-            else if (j.stage === 'done') done++;
-            else if (j.stage === 'error' || j.stage === 'cancelled') failed++;
-            else downloading++; // parsing/preparing/downloading/decrypting/…
-        }
-        const parts = [];
-        if (downloading) parts.push(`${downloading} downloading`);
-        if (queued) parts.push(`${queued} queued`);
-        if (done) parts.push(`${done} done`);
-        if (failed) parts.push(`${failed} failed`);
-        queueSummary.textContent = parts.join(' · ');
-        queueSummary.hidden = parts.length === 0;
-    }
-
-    // ── Multi-link batch queueing ────────────────────────────────────────────
-
-    // Non-anchored + global so it finds EVERY Apple Music URL in a multi-line
-    // or space-separated blob (contrast the single-URL paste validator).
-    const APPLE_URL_RE = /https?:\/\/music\.apple\.com\/[^\s]+\/(?:album|song|playlist|music-video|post)\/[^\s]+/gi;
-
-    function extractAppleUrls(text) {
-        if (!text) return [];
-        const matches = text.match(APPLE_URL_RE) || [];
-        return [...new Set(matches.map(u => u.trim()))];
-    }
-
-    // Fire-and-forget: submit each link straight to the server queue (all
-    // tracks, no preview). The server semaphore serializes execution.
-    async function enqueueBatch(urls) {
-        const userCfg = loadLocalSettings();
-        let ok = 0;
-        for (const url of urls) {
-            try {
-                const job = await api.startDownload(url, userCfg, null);
-                _activeJobs.add(job.job_id);
-                jobs[job.job_id] = job;
-                renderJob(job);
-                ok++;
-            } catch (e) {
-                toast(`Failed to queue ${url}: ${e.message || e}`, 'error');
-            }
-        }
-        if (ok) {
-            urlInput.value = '';
-            toast(`Queued ${ok} link${ok > 1 ? 's' : ''}`, 'success');
-        }
-        revealQueue();
     }
 
     // ── Blob storage & save helpers ─────────────────────────────────────
@@ -1149,12 +834,7 @@
             && job.job_id === _focusedJobId;
         const totalTracks = job.tracks ? job.tracks.length : 0;
 
-        // Helper to update both card status and preview status together
-        const card = $(`[data-job-id="${job.job_id}"]`);
-        const statusEl = card?.querySelector('.job-status');
-
         function updateFetchStatus(text, pct) {
-            if (statusEl) statusEl.textContent = text;
             if (isFocusedPreview) {
                 const progressBar = pct >= 0
                     ? `<div class="status-progress-bar processing"><div class="status-progress-fill" style="width:${pct}%"></div></div>`
@@ -1163,315 +843,333 @@
             }
         }
 
-        // Wait for all pending blob fetches with progress tracking
-        const pending = _blobPromises[job.job_id];
-        const pendingLyrics = _lyricsBlobPromises[job.job_id];
-        const pendingCovers = _coverBlobPromises[job.job_id];
-        const allPromises = [
-            ...(pending ? Object.values(pending) : []),
-            ...(pendingLyrics ? Object.values(pendingLyrics) : []),
-            ...(pendingCovers ? Object.values(pendingCovers) : []),
-        ];
-        const totalFetches = allPromises.length;
+        try {
+            // Wait for all pending blob fetches with progress tracking
+            const pending = _blobPromises[job.job_id];
+            const pendingLyrics = _lyricsBlobPromises[job.job_id];
+            const pendingCovers = _coverBlobPromises[job.job_id];
+            const allPromises = [
+                ...(pending ? Object.values(pending) : []),
+                ...(pendingLyrics ? Object.values(pendingLyrics) : []),
+                ...(pendingCovers ? Object.values(pendingCovers) : []),
+            ];
+            const totalFetches = allPromises.length;
 
-        if (totalFetches > 1) {
-            // Track progress as each blob resolves
-            let fetchedCount = 0;
-            updateFetchStatus(`Fetching track files (0/${totalFetches})\u2026`, 0);
+            if (totalFetches > 1) {
+                // Track progress as each blob resolves
+                let fetchedCount = 0;
+                const trackedPromises = allPromises.map(p =>
+                    p.then(() => {
+                        fetchedCount++;
+                    })
+                );
+                await Promise.all(trackedPromises);
+            } else {
+                await Promise.all(allPromises);
+            }
 
-            const trackedPromises = allPromises.map(p =>
-                p.then(() => {
-                    fetchedCount++;
-                    const pct = Math.round((fetchedCount / totalFetches) * 100);
-                    updateFetchStatus(`Fetching track files (${fetchedCount}/${totalFetches})\u2026`, pct);
-                })
-            );
-            await Promise.all(trackedPromises);
-        } else {
-            // Single file or no files — just wait without granular progress
-            if (totalFetches === 1) updateFetchStatus('Fetching track file\u2026', 50);
-            await Promise.all(allPromises);
-        }
+            const jobBlobs = _trackBlobs[job.job_id];
+            const blobCount = jobBlobs ? Object.keys(jobBlobs).length : 0;
 
-        const jobBlobs = _trackBlobs[job.job_id];
-        const blobCount = jobBlobs ? Object.keys(jobBlobs).length : 0;
-
-        if (blobCount === 0) return; // Nothing to save
-
-        // Collect all files (audio + lyrics + covers) into a single entries array
-        const entries = Object.values(jobBlobs);
-        const lyricsEntries = _lyricsBlobs[job.job_id]
-            ? Object.values(_lyricsBlobs[job.job_id])
-            : [];
-        const coverEntries = _coverBlobs[job.job_id]
-            ? Object.values(_coverBlobs[job.job_id])
-            : [];
-
-        // Fetch animated artwork MP4s if available
-        const animatedArtworkEntries = [];
-        const artPaths = job.animated_artwork_paths || [];
-        const artUrls = job.animated_artwork_urls || [];
-        for (let i = 0; i < Math.max(artPaths.length, artUrls.length); i++) {
-            try {
-                let resp;
-                if (artUrls[i]) {
-                    // Cloud mode: fetch from signed R2 URL
-                    resp = await fetch(artUrls[i]);
-                } else {
-                    // Local mode: fetch from API
-                    const token = AuthStorage.getToken();
-                    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-                    resp = await fetch(`/api/save/${job.job_id}/animated-artwork/${i}`, { headers });
+            if (blobCount === 0) {
+                if (isFocusedPreview) {
+                    previewDownloadBtn.disabled = false;
+                    _focusedJobId = null;
+                    setUrlInputEnabled(true);
                 }
-                if (resp.ok) {
-                    const filename = resp.headers.get('X-Filename') || `animated_cover_${i}.mp4`;
-                    const blob = await resp.blob();
-                    if (blob && blob.size > 0) {
-                        animatedArtworkEntries.push({ blob, filename });
-                    }
-                }
-            } catch (err) {
-                console.warn(`[App] Animated artwork fetch failed for index ${i}:`, err);
-            }
-        }
-
-        const allEntries = [...entries, ...lyricsEntries, ...coverEntries, ...animatedArtworkEntries];
-
-        let finalBlob, finalFilename;
-
-        if (allEntries.length === 1) {
-            // ── Single file — save directly ──
-            finalBlob = allEntries[0].blob;
-            finalFilename = allEntries[0].filename;
-        } else {
-            // ── Multi-file — package to ZIP in background ──
-            if (typeof JSZip === 'undefined') {
-                // Fallback: trigger sequential save dialogs for each file
-                for (const { blob, filename } of allEntries) {
-                    triggerSave(blob, filename);
-                    await new Promise(r => setTimeout(r, 300));
-                }
-                updateFetchStatus('✓ Saved', -1);
-                if (statusEl) statusEl.className = 'job-status done';
-                // Clean up blobs from memory
-                delete _trackBlobs[job.job_id];
-                delete _blobPromises[job.job_id];
-                delete _lyricsBlobs[job.job_id];
-                delete _lyricsBlobPromises[job.job_id];
-                delete _coverBlobs[job.job_id];
-                delete _coverBlobPromises[job.job_id];
-                return;
+                return; // Nothing to save
             }
 
-            updateFetchStatus('Packaging ZIP…', 0);
+            // Collect all files (audio + lyrics + covers) into a single entries array
+            const entries = Object.values(jobBlobs);
+            const lyricsEntries = _lyricsBlobs[job.job_id]
+                ? Object.values(_lyricsBlobs[job.job_id])
+                : [];
+            const coverEntries = _coverBlobs[job.job_id]
+                ? Object.values(_coverBlobs[job.job_id])
+                : [];
 
-            const zip = new JSZip();
-
-            // Check if this is a multi-disc album by looking at track disc numbers
-            const discNumbers = (job.tracks || []).map(t => t.disc_number || 1);
-            const maxDiscNumber = Math.max(1, ...discNumbers);
-            const userSettings = loadLocalSettings();
-            const useDiscFolders = maxDiscNumber > 1 && userSettings.disc_folder_enabled;
-
-            // Build a trackIndex → disc_number lookup
-            const discMap = {};
-            if (useDiscFolders) {
-                for (const t of (job.tracks || [])) {
-                    discMap[t.track_index] = t.disc_number || 1;
-                }
-            }
-
-            const discLabel = userSettings.disc_folder_label || 'Disc';
-
-            // Helper: get folder prefix from a track's relative path
-            function _folderOf(relPath) {
-                if (!relPath) return '';
-                const lastSlash = relPath.replace(/\\/g, '/').lastIndexOf('/');
-                return lastSlash >= 0 ? relPath.replace(/\\/g, '/').substring(0, lastSlash + 1) : '';
-            }
-            // Helper: get just the filename from a path
-            function _filenameOf(relPath) {
-                if (!relPath) return relPath;
-                const lastSlash = relPath.replace(/\\/g, '/').lastIndexOf('/');
-                return lastSlash >= 0 ? relPath.substring(lastSlash + 1) : relPath;
-            }
-
-            // ── Sequential track-by-track ZIP packaging with visible progress ──
-            const trackIndices = Object.keys(jobBlobs).map(Number).sort((a, b) => a - b);
-            const lyricsMap = _lyricsBlobs[job.job_id] || {};
-            const usedZipPaths = new Set();
-
-            function _getUniqueZipPath(p) {
-                let uniquePath = p;
-                let counter = 1;
-                while (usedZipPaths.has(uniquePath)) {
-                    const dotIdx = p.lastIndexOf('.');
-                    if (dotIdx > 0) {
-                        uniquePath = `${p.substring(0, dotIdx)} (${counter})${p.substring(dotIdx)}`;
+            // Fetch animated artwork MP4s if available
+            const animatedArtworkEntries = [];
+            const artPaths = job.animated_artwork_paths || [];
+            const artUrls = job.animated_artwork_urls || [];
+            for (let i = 0; i < Math.max(artPaths.length, artUrls.length); i++) {
+                try {
+                    let resp;
+                    if (artUrls[i]) {
+                        // Cloud mode: fetch from signed R2 URL
+                        resp = await fetch(artUrls[i]);
                     } else {
-                        uniquePath = `${p} (${counter})`;
+                        // Local mode: fetch from API
+                        const token = AuthStorage.getToken();
+                        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+                        resp = await fetch(`/api/save/${job.job_id}/animated-artwork/${i}`, { headers });
                     }
-                    counter++;
+                    if (resp.ok) {
+                        const filename = resp.headers.get('X-Filename') || `animated_cover_${i}.mp4`;
+                        const blob = await resp.blob();
+                        if (blob && blob.size > 0) {
+                            animatedArtworkEntries.push({ blob, filename });
+                        }
+                    }
+                } catch (err) {
+                    console.warn(`[App] Animated artwork fetch failed for index ${i}:`, err);
                 }
-                usedZipPaths.add(uniquePath);
-                return uniquePath;
             }
 
-            for (let t = 0; t < trackIndices.length; t++) {
-                const trackIdx = trackIndices[t];
-                const entry = jobBlobs[trackIdx];
-                const track = job.tracks?.[trackIdx];
+            const allEntries = [...entries, ...lyricsEntries, ...coverEntries, ...animatedArtworkEntries];
 
-                // Update status before processing this track
-                updateFetchStatus(`Packaging ZIP (${t + 1}/${totalTracks})\u2026`, Math.round(((t + 1) / totalTracks) * 100));
+            let finalBlob, finalFilename;
 
-                // Add audio file
-                let zipPath = track?.relative_path || entry.filename;
-                if (useDiscFolders && track) {
-                    const discNum = track.disc_number || 1;
-                    const folder = _folderOf(zipPath);
-                    const fname = _filenameOf(zipPath);
-                    zipPath = `${folder}${discLabel} ${discNum}/${fname}`;
+            if (allEntries.length === 1) {
+                // ── Single file — save directly ──
+                updateFetchStatus('Saving…', 100);
+                finalBlob = allEntries[0].blob;
+                finalFilename = allEntries[0].filename;
+            } else {
+                // ── Multi-file — package to ZIP in background ──
+                if (typeof JSZip === 'undefined') {
+                    // Fallback: trigger sequential save dialogs for each file
+                    for (const { blob, filename } of allEntries) {
+                        triggerSave(blob, filename);
+                        await new Promise(r => setTimeout(r, 300));
+                    }
+                    updateFetchStatus('✓ Saved', -1);
+                    if (isFocusedPreview) {
+                        setStatus(`<span class="status-text saved"><span class="status-saved-check">✓</span> ${escapeHtml(`Saved ${allEntries.length} files`)}</span>`);
+                        previewDownloadBtn.disabled = false;
+                        _focusedJobId = null;
+                        setUrlInputEnabled(true);
+                    }
+                    // Clean up blobs from memory
+                    delete _trackBlobs[job.job_id];
+                    delete _blobPromises[job.job_id];
+                    delete _lyricsBlobs[job.job_id];
+                    delete _lyricsBlobPromises[job.job_id];
+                    delete _coverBlobs[job.job_id];
+                    delete _coverBlobPromises[job.job_id];
+                    return;
                 }
-                zip.file(_getUniqueZipPath(zipPath), entry.blob);
 
-                // Add matching lyrics file for this track
-                if (lyricsMap[trackIdx]) {
-                    const lEntry = lyricsMap[trackIdx];
-                    const relPath = track?.relative_path;
-                    let folder = relPath ? _folderOf(relPath) : '';
+                updateFetchStatus('Compressing 0%…', 0);
+
+                const zip = new JSZip();
+
+                // Check if this is a multi-disc album by looking at track disc numbers
+                const discNumbers = (job.tracks || []).map(t => t.disc_number || 1);
+                const maxDiscNumber = Math.max(1, ...discNumbers);
+                const userSettings = loadLocalSettings();
+                const useDiscFolders = maxDiscNumber > 1 && userSettings.disc_folder_enabled;
+
+                // Build a trackIndex → disc_number lookup
+                const discMap = {};
+                if (useDiscFolders) {
+                    for (const t of (job.tracks || [])) {
+                        discMap[t.track_index] = t.disc_number || 1;
+                    }
+                }
+
+                const discLabel = userSettings.disc_folder_label || 'Disc';
+
+                // Helper: get folder prefix from a track's relative path
+                function _folderOf(relPath) {
+                    if (!relPath) return '';
+                    const lastSlash = relPath.replace(/\\/g, '/').lastIndexOf('/');
+                    return lastSlash >= 0 ? relPath.replace(/\\/g, '/').substring(0, lastSlash + 1) : '';
+                }
+                // Helper: get just the filename from a path
+                function _filenameOf(relPath) {
+                    if (!relPath) return relPath;
+                    const lastSlash = relPath.replace(/\\/g, '/').lastIndexOf('/');
+                    return lastSlash >= 0 ? relPath.substring(lastSlash + 1) : relPath;
+                }
+
+                // ── Sequential track-by-track ZIP packaging with visible progress ──
+                const trackIndices = Object.keys(jobBlobs).map(Number).sort((a, b) => a - b);
+                const lyricsMap = _lyricsBlobs[job.job_id] || {};
+                const usedZipPaths = new Set();
+
+                function _getUniqueZipPath(p) {
+                    let uniquePath = p;
+                    let counter = 1;
+                    while (usedZipPaths.has(uniquePath)) {
+                        const dotIdx = p.lastIndexOf('.');
+                        if (dotIdx > 0) {
+                            uniquePath = `${p.substring(0, dotIdx)} (${counter})${p.substring(dotIdx)}`;
+                        } else {
+                            uniquePath = `${p} (${counter})`;
+                        }
+                        counter++;
+                    }
+                    usedZipPaths.add(uniquePath);
+                    return uniquePath;
+                }
+
+                for (let t = 0; t < trackIndices.length; t++) {
+                    const trackIdx = trackIndices[t];
+                    const entry = jobBlobs[trackIdx];
+                    const track = job.tracks?.[trackIdx];
+
+                    // Update status while adding tracks into zip (0% - 15%)
+                    const packPct = Math.round(((t + 1) / totalTracks) * 15);
+                    updateFetchStatus(`Compressing ${packPct}%…`, packPct);
+
+                    // Add audio file
+                    let zipPath = track?.relative_path || entry.filename;
                     if (useDiscFolders && track) {
                         const discNum = track.disc_number || 1;
-                        folder = `${folder}${discLabel} ${discNum}/`;
+                        const folder = _folderOf(zipPath);
+                        const fname = _filenameOf(zipPath);
+                        zipPath = `${folder}${discLabel} ${discNum}/${fname}`;
                     }
-                    zip.file(_getUniqueZipPath(folder + lEntry.filename), lEntry.blob);
+                    zip.file(_getUniqueZipPath(zipPath), entry.blob);
+
+                    // Add matching lyrics file for this track
+                    if (lyricsMap[trackIdx]) {
+                        const lEntry = lyricsMap[trackIdx];
+                        const relPath = track?.relative_path;
+                        let folder = relPath ? _folderOf(relPath) : '';
+                        if (useDiscFolders && track) {
+                            const discNum = track.disc_number || 1;
+                            folder = `${folder}${discLabel} ${discNum}/`;
+                        }
+                        zip.file(_getUniqueZipPath(folder + lEntry.filename), lEntry.blob);
+                    }
+
+                    // Yield to the browser so the DOM repaints the progress text
+                    await new Promise(r => setTimeout(r, 0));
                 }
 
-                // Yield to the browser so the DOM repaints the progress text
-                await new Promise(r => setTimeout(r, 0));
-            }
-
-            // Add covers — one copy per disc subfolder if enabled, otherwise in album folder
-            const firstTrack = job.tracks?.[0];
-            const coverFolder = firstTrack?.relative_path ? _folderOf(firstTrack.relative_path) : '';
-            for (const entry of coverEntries) {
-                if (useDiscFolders) {
-                    const discs = new Set(discNumbers);
-                    for (const d of discs) {
-                        zip.file(`${coverFolder}${discLabel} ${d}/${entry.filename}`, entry.blob);
+                // Add covers — one copy per disc subfolder if enabled, otherwise in album folder
+                const firstTrack = job.tracks?.[0];
+                const coverFolder = firstTrack?.relative_path ? _folderOf(firstTrack.relative_path) : '';
+                for (const entry of coverEntries) {
+                    if (useDiscFolders) {
+                        const discs = new Set(discNumbers);
+                        for (const d of discs) {
+                            zip.file(`${coverFolder}${discLabel} ${d}/${entry.filename}`, entry.blob);
+                        }
+                    } else {
+                        zip.file(coverFolder + entry.filename, entry.blob);
                     }
+                }
+
+                // Add animated artwork at root level
+                for (const entry of animatedArtworkEntries) {
+                    zip.file(entry.filename, entry.blob);
+                }
+
+                finalBlob = await zip.generateAsync(
+                    { type: 'blob', compression: 'STORE' },
+                    (meta) => {
+                        // Map JSZip generation progress from 15% to 100%
+                        const pct = Math.min(100, Math.round(15 + (meta.percent * 0.85)));
+                        updateFetchStatus(`Compressing ${pct}%…`, pct);
+                    }
+                );
+
+                // Build ZIP filename from user template based on media type
+                const first = job.tracks[0];
+                const previewName = isFocusedPreview ? previewTitle?.textContent?.trim() : '';
+                const previewArtistName = isFocusedPreview ? previewArtist?.textContent?.trim() : '';
+                const mediaType = (isFocusedPreview && _previewMediaType)
+                    || job.media_type
+                    || (job.tracks.length === 1 ? 'song' : 'album');
+
+                // Pick the right template
+                let tpl;
+                if (mediaType === 'song') {
+                    tpl = userSettings.compressed_single_template || DEFAULT_SETTINGS.compressed_single_template;
+                } else if (mediaType === 'playlist') {
+                    tpl = userSettings.compressed_playlist_template || DEFAULT_SETTINGS.compressed_playlist_template;
                 } else {
-                    zip.file(coverFolder + entry.filename, entry.blob);
+                    tpl = userSettings.compressed_album_template || DEFAULT_SETTINGS.compressed_album_template;
                 }
-            }
 
-            // Add animated artwork at root level
-            for (const entry of animatedArtworkEntries) {
-                zip.file(entry.filename, entry.blob);
-            }
+                // Build replacement map
+                const albumArtist = previewArtistName && previewArtistName.toLowerCase() !== 'unknown' ? previewArtistName : '';
+                const replacements = {
+                    '{title}': first?.title || previewName || '',
+                    '{artist}': first?.artist || albumArtist || '',
+                    '{album}': first?.album || previewName || '',
+                    '{album_artist}': albumArtist,
+                    '{playlist}': previewName || '',
+                    '{playlist_artist}': albumArtist,
+                };
 
-            finalBlob = await zip.generateAsync(
-                { type: 'blob', compression: 'STORE' },
-                (meta) => {
-                    const pct = Math.round(meta.percent);
-                    updateFetchStatus(`Compressing ZIP ${pct}%…`, pct);
+                let zipName = tpl;
+                for (const [token, val] of Object.entries(replacements)) {
+                    zipName = zipName.split(token).join(val);
                 }
-            );
-
-            // Build ZIP filename from user template based on media type
-            const first = job.tracks[0];
-            const previewName = isFocusedPreview ? previewTitle?.textContent?.trim() : '';
-            const previewArtistName = isFocusedPreview ? previewArtist?.textContent?.trim() : '';
-            const mediaType = (isFocusedPreview && _previewMediaType)
-                || job.media_type
-                || (job.tracks.length === 1 ? 'song' : 'album');
-
-            // Pick the right template
-            let tpl;
-            if (mediaType === 'song') {
-                tpl = userSettings.compressed_single_template || DEFAULT_SETTINGS.compressed_single_template;
-            } else if (mediaType === 'playlist') {
-                tpl = userSettings.compressed_playlist_template || DEFAULT_SETTINGS.compressed_playlist_template;
-            } else {
-                tpl = userSettings.compressed_album_template || DEFAULT_SETTINGS.compressed_album_template;
+                // Clean up dangling separators when artist is empty (e.g. " - ")
+                zipName = zipName.replace(/\s*-\s*$/g, '').replace(/^\s*-\s*/g, '').trim();
+                // Fallback if template produced empty string
+                if (!zipName) zipName = previewName || first?.album || job.job_id;
+                zipName = zipName.replace(/[<>:"/\\|?*]/g, '_').trim();
+                finalFilename = `${zipName}.zip`;
             }
 
-            // Build replacement map
-            const albumArtist = previewArtistName && previewArtistName.toLowerCase() !== 'unknown' ? previewArtistName : '';
-            const replacements = {
-                '{title}': first?.title || previewName || '',
-                '{artist}': first?.artist || albumArtist || '',
-                '{album}': first?.album || previewName || '',
-                '{album_artist}': albumArtist,
-                '{playlist}': previewName || '',
-                '{playlist_artist}': albumArtist,
-            };
+            // Auto-trigger browser save dialog
+            triggerSave(finalBlob, finalFilename);
 
-            let zipName = tpl;
-            for (const [token, val] of Object.entries(replacements)) {
-                zipName = zipName.split(token).join(val);
+            // Update status to reflect saved state (no more processing animation)
+            if (isFocusedPreview) {
+                setStatus(`<span class="status-text saved"><span class="status-saved-check">✓</span> ${escapeHtml(`${finalFilename} saved`)}</span>`);
+                previewDownloadBtn.disabled = false;
+                _focusedJobId = null;
+                setUrlInputEnabled(true);
             }
-            // Clean up dangling separators when artist is empty (e.g. " - ")
-            zipName = zipName.replace(/\s*-\s*$/g, '').replace(/^\s*-\s*/g, '').trim();
-            // Fallback if template produced empty string
-            if (!zipName) zipName = previewName || first?.album || job.job_id;
-            zipName = zipName.replace(/[<>:"/\\|?*]/g, '_').trim();
-            finalFilename = `${zipName}.zip`;
-        }
 
-        // Auto-trigger browser save dialog
-        triggerSave(finalBlob, finalFilename);
+            // Clean up blobs from memory
+            delete _trackBlobs[job.job_id];
+            delete _blobPromises[job.job_id];
+            delete _lyricsBlobs[job.job_id];
+            delete _lyricsBlobPromises[job.job_id];
+            delete _coverBlobs[job.job_id];
+            delete _coverBlobPromises[job.job_id];
 
-        // Update status to reflect saved state (no more processing animation)
-        if (statusEl) {
-            statusEl.textContent = '✓ Saved';
-            statusEl.className = 'job-status done';
-        }
-        if (isFocusedPreview) {
-            setStatus(`<span class="status-text">${escapeHtml('✓ Saved ' + finalFilename)}</span>`);
-        }
+            // Signal backend to delete temp files now that saving is complete
+            // Fire-and-forget — don't block on the response
+            api.cleanupJob(job.job_id).catch(err => {
+                console.warn('[App] Cleanup signal failed (non-critical):', err);
+            });
 
-        // Clean up blobs from memory
-        delete _trackBlobs[job.job_id];
-        delete _blobPromises[job.job_id];
-        delete _lyricsBlobs[job.job_id];
-        delete _lyricsBlobPromises[job.job_id];
-        delete _coverBlobs[job.job_id];
-        delete _coverBlobPromises[job.job_id];
-
-        // Signal backend to delete temp files now that saving is complete
-        // Fire-and-forget — don't block on the response
-        api.cleanupJob(job.job_id).catch(err => {
-            console.warn('[App] Cleanup signal failed (non-critical):', err);
-        });
-
-        // ── Record download to Firestore (fire-and-forget) ──
-        if (typeof addDownloadHistory === 'function') {
-            const mediaType = (isFocusedPreview && _previewMediaType)
-                || job.media_type
-                || (job.tracks?.length === 1 ? 'song' : 'album');
-            const typeLabel = mediaType === 'song' ? 'Track'
-                : mediaType === 'playlist' ? 'Playlist'
-                    : mediaType === 'music-video' ? 'Music Video'
-                        : 'Album';
-            const userCfg = loadLocalSettings();
-            const historyItem = {
-                title: (isFocusedPreview ? previewTitle?.textContent?.trim() : '') || job.tracks?.[0]?.title || 'Unknown',
-                artist: (isFocusedPreview ? previewArtist?.textContent?.trim() : '') || job.tracks?.[0]?.artist || 'Unknown',
-                type: typeLabel,
-                codec: getCodecLabel(userCfg.song_codec),
-                date: new Date().toLocaleDateString() + ' ' +
-                    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            };
-            addDownloadHistory(historyItem).then(() => {
-                setTimeout(() => refreshLatestDownloadInfo(), 1000);
-            }).catch(err =>
-                console.warn('[App] History save failed:', err)
-            );
-            setTimeout(() => refreshLatestDownloadInfo(), 1500);
-            incrementDownloadCount().catch(err =>
-                console.warn('[App] Stats update failed:', err)
-            );
+            // ── Record download to Firestore (fire-and-forget) ──
+            if (typeof addDownloadHistory === 'function') {
+                const mediaType = (isFocusedPreview && _previewMediaType)
+                    || job.media_type
+                    || (job.tracks?.length === 1 ? 'song' : 'album');
+                const typeLabel = mediaType === 'song' ? 'Track'
+                    : mediaType === 'playlist' ? 'Playlist'
+                        : mediaType === 'music-video' ? 'Music Video'
+                            : 'Album';
+                const userCfg = loadLocalSettings();
+                const historyItem = {
+                    title: (isFocusedPreview ? previewTitle?.textContent?.trim() : '') || job.tracks?.[0]?.title || 'Unknown',
+                    artist: (isFocusedPreview ? previewArtist?.textContent?.trim() : '') || job.tracks?.[0]?.artist || 'Unknown',
+                    type: typeLabel,
+                    codec: getCodecLabel(userCfg.song_codec),
+                    date: new Date().toLocaleDateString() + ' ' +
+                        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                };
+                addDownloadHistory(historyItem).then(() => {
+                    setTimeout(() => refreshLatestDownloadInfo(), 1000);
+                }).catch(err =>
+                    console.warn('[App] History save failed:', err)
+                );
+                setTimeout(() => refreshLatestDownloadInfo(), 1500);
+                incrementDownloadCount().catch(err =>
+                    console.warn('[App] Stats update failed:', err)
+                );
+            }
+        } catch (err) {
+            console.error('[App] Failed to package and save job:', err);
+            toast('Failed to save download: ' + (err.message || 'Unknown error'), 'error');
+            if (isFocusedPreview) {
+                setStatus(`<span class="status-text">${escapeHtml('Failed to save download.')}</span>`);
+                previewDownloadBtn.disabled = false;
+                _focusedJobId = null;
+            }
         }
     }
 
@@ -1735,8 +1433,8 @@
         previewSection.classList.add('visible');
         previewDownloadBtn.disabled = false;
 
-        // Input bar stays live at all times so the user can stage or batch
-        // more links while this preview (and any running downloads) continue.
+        // Input bar is disabled while preview is active
+        setUrlInputEnabled(false);
     }
 
     // ── Track Selection Logic ─────────────────────────────────────────────
@@ -1828,6 +1526,7 @@
     function _enterEditMode() {
         _isEditMode = true;
         previewTracks.classList.add('edit-mode');
+        previewDownloadBtn.disabled = true;
 
         // If we had a finalized selection, restore checkbox states; otherwise check all
         const checkboxes = previewTracks.querySelectorAll('.preview-track-checkbox');
@@ -1851,6 +1550,11 @@
     function _exitEditMode() {
         _isEditMode = false;
         previewTracks.classList.remove('edit-mode');
+
+        // Re-enable download button if no download is active
+        if (!_focusedJobId) {
+            previewDownloadBtn.disabled = false;
+        }
 
         // Re-apply dimmed state if we had a confirmed selection
         if (_finalizedSelection !== null) {
@@ -1884,6 +1588,11 @@
         _isEditMode = false;
         previewTracks.classList.remove('edit-mode');
 
+        // Re-enable download button now that selection is confirmed
+        if (!_focusedJobId) {
+            previewDownloadBtn.disabled = false;
+        }
+
         // Dim unselected tracks
         previewTracks.querySelectorAll('.preview-track-item').forEach(el => {
             const idx = parseInt(el.dataset.trackIdx, 10);
@@ -1909,6 +1618,11 @@
         _finalizedSelection = null;
         _isEditMode = false;
         previewTracks.classList.remove('edit-mode');
+
+        // Re-enable download button if no download is active
+        if (!_focusedJobId) {
+            previewDownloadBtn.disabled = false;
+        }
 
         // Remove all dimmed states
         previewTracks.querySelectorAll('.preview-track-item').forEach(el => {
@@ -1949,9 +1663,16 @@
         previewArtwork.style.display = '';
 
         // Re-enable input bar
-        urlInput.disabled = false;
-        btnSubmit.disabled = false;
-        if (btnPaste) btnPaste.disabled = false;
+        setUrlInputEnabled(true);
+    }
+
+    function setUrlInputEnabled(enabled) {
+        if (urlInputWrap) {
+            urlInputWrap.classList.toggle('disabled', !enabled);
+        }
+        if (urlInput) urlInput.disabled = !enabled;
+        if (btnSubmit) btnSubmit.disabled = !enabled;
+        if (btnPaste) btnPaste.disabled = !enabled;
     }
 
     function setStatus(html) {
@@ -1998,17 +1719,38 @@
             let doneCount = 0;
             let activeCount = 0;
             let activeTrack = null;
+            let completedUnits = 0;
+            let hasDownloadingTrack = false;
+
             for (const t of tracks) {
-                if (t.stage === 'done') doneCount++;
-                else if (isActiveTrackStage(t.stage)) {
+                if (t.stage === 'done') {
+                    doneCount++;
+                    completedUnits += 1.0;
+                } else if (STAGE_PROGRESS[t.stage] != null) {
                     activeCount++;
+                    completedUnits += STAGE_PROGRESS[t.stage] / 100;
                     if (!activeTrack) activeTrack = t;
+                    if (t.stage === 'downloading') hasDownloadingTrack = true;
+                } else if (isActiveTrackStage(t.stage)) {
+                    activeCount++;
+                    completedUnits += 0.5;
+                    if (!activeTrack) activeTrack = t;
+                    if (t.stage === 'downloading') hasDownloadingTrack = true;
                 }
             }
-            // Each done track = 1 unit, each in-progress track = ~0.5 unit
-            progressPct = total > 0 ? Math.round(((doneCount + activeCount * 0.5) / total) * 100) : 0;
+
+            progressPct = total > 0 ? Math.round((completedUnits / total) * 100) : 0;
             if (progressPct > 99 && doneCount < total) progressPct = 99;
-            headerText = `Downloading ${progressPct}%`;
+
+            if (hasDownloadingTrack || (!activeTrack && doneCount < total)) {
+                headerText = `Downloading ${progressPct}%`;
+            } else if (activeTrack) {
+                const stageName = activeTrack.stage.charAt(0).toUpperCase() + activeTrack.stage.slice(1);
+                headerText = `${stageName} ${progressPct}%`;
+            } else {
+                headerText = `Processing ${progressPct}%`;
+            }
+
             if (activeTrack) {
                 const verb = activeTrack.stage_detail
                     || `${activeTrack.stage.charAt(0).toUpperCase()}${activeTrack.stage.slice(1)}…`;
@@ -2016,8 +1758,14 @@
                 activeDetail = `${verb} · ${name}`;
             }
         } else if (stage === 'done') {
-            headerText = 'Ready.';
-            progressPct = 100;
+            if (_activeJobs.has(job.job_id)) {
+                const willZip = (job.tracks || []).length > 1;
+                headerText = willZip ? 'Compressing 0%…' : 'Saving…';
+                progressPct = willZip ? 0 : 100;
+            } else {
+                headerText = 'Done.';
+                progressPct = 100;
+            }
         } else if (stage === 'error') {
             headerText = job.error_message || 'An error occurred.';
         } else if (stage === 'cancelled') {
@@ -2088,10 +1836,14 @@
         setStatus(html);
 
         // Re-enable button on terminal states
-        if (stage === 'done' || stage === 'error' || stage === 'cancelled') {
+        if (stage === 'error' || stage === 'cancelled') {
             previewDownloadBtn.disabled = false;
             _focusedJobId = null;
-            // Input bar is never disabled, so nothing to re-enable here.
+            setUrlInputEnabled(true);
+        } else if (stage === 'done' && !_activeJobs.has(job.job_id)) {
+            previewDownloadBtn.disabled = false;
+            _focusedJobId = null;
+            setUrlInputEnabled(true);
         }
     }
 
@@ -2151,7 +1903,7 @@
     // preview is replaced only on the next successful submit, or dismissed via
     // its own close control. (Previously every keystroke called hidePreview.)
 
-    // Paste button — read clipboard; 1 link → preview, 2+ links → batch queue.
+    // Paste button — read clipboard; preview the single link.
     if (btnPaste) {
         btnPaste.addEventListener('click', async () => {
             let text;
@@ -2161,15 +1913,13 @@
                 toast('Unable to read clipboard', 'error');
                 return;
             }
-            const urls = extractAppleUrls(text);
-            if (urls.length === 0) {
+            const match = text.match(/https?:\/\/music\.apple\.com\/[^\s]+/i);
+            if (!match) {
                 toast('Clipboard does not contain an Apple Music URL', 'error');
-            } else if (urls.length === 1) {
-                urlInput.value = urls[0];
-                urlInput.focus();
-            } else {
-                enqueueBatch(urls);
+                return;
             }
+            urlInput.value = match[0];
+            urlInput.focus();
         });
     }
 
@@ -2179,15 +1929,7 @@
         const raw = urlInput.value.trim();
         if (!raw || isSubmitting) return;
 
-        // Multiple links → skip preview, fire them straight into the queue.
-        const urls = extractAppleUrls(raw);
-        if (urls.length >= 2) {
-            enqueueBatch(urls);
-            return;
-        }
-
-        // Single link → preview (with per-track selection). The input bar stays
-        // live throughout so more links can be staged or batched.
+        // Preview (with per-track selection).
         isSubmitting = true;
         btnSubmit.disabled = true;
         btnSubmit.textContent = 'Loading…';
@@ -2201,10 +1943,13 @@
         } catch (e) {
             clearStatus();
             toast(e.message || 'Failed to load preview', 'error');
+            setUrlInputEnabled(true);
         } finally {
             isSubmitting = false;
-            btnSubmit.disabled = false;
             btnSubmit.textContent = 'Preview';
+            if (!_previewUrl) {
+                setUrlInputEnabled(true);
+            }
         }
     });
 
@@ -2268,17 +2013,10 @@
         }
     });
 
-    // Preview close button — dismiss the staged preview (any download it
-    // already started keeps running as its own queue card).
-    if (previewCloseBtn) {
-        previewCloseBtn.addEventListener('click', () => {
-            hidePreview();
-        });
-    }
 
     // Preview download button — triggers actual download
     previewDownloadBtn.addEventListener('click', async () => {
-        if (!_previewUrl) return;
+        if (!_previewUrl || _isEditMode) return;
 
         // Disable only this button (guards against enqueuing the staged link
         // twice). The input bar stays live so more links can be added.
@@ -2297,13 +2035,12 @@
             _activeJobs.add(job.job_id);
             _focusedJobId = job.job_id;
             jobs[job.job_id] = job;
-            renderJob(job);
-            maybeRevealQueue();
             // Preview stays visible — status container shows progress
         } catch (e) {
             toast(e.message || 'Download failed', 'error');
             previewDownloadBtn.disabled = false;
             clearStatus();
+            setUrlInputEnabled(true);
         }
     });
 
@@ -2317,52 +2054,13 @@
         try {
             await api.cancelDownload(_focusedJobId);
             toast('Download cancelled', 'info');
+            setUrlInputEnabled(true);
         } catch (err) {
             toast(err.message || 'Cancel failed', 'error');
         }
     });
 
-    // Individual track retry buttons (delegated)
-    queueList.addEventListener('click', async (e) => {
-        // Per-card cancel button
-        const cancelBtn = e.target.closest('.job-cancel-btn');
-        if (cancelBtn) {
-            e.preventDefault();
-            e.stopPropagation();
-            const jobId = cancelBtn.dataset.jobId;
-            cancelBtn.disabled = true;
-            cancelBtn.style.opacity = '0.4';
-            try {
-                await api.cancelDownload(jobId);
-                toast('Download cancelled', 'info');
-            } catch (err) {
-                toast(err.message || 'Cancel failed', 'error');
-                cancelBtn.disabled = false;
-                cancelBtn.style.opacity = '';
-            }
-            return;
-        }
 
-        // Individual track retry buttons
-        const retryBtn = e.target.closest('.track-retry-btn');
-        if (retryBtn) {
-            e.preventDefault();
-            e.stopPropagation();
-            const jobId = retryBtn.dataset.jobId;
-            const trackIndex = parseInt(retryBtn.dataset.trackIndex, 10);
-            retryBtn.disabled = true;
-            retryBtn.textContent = '...';
-            try {
-                await api.retryTrack(jobId, trackIndex);
-                toast('Retrying track…', 'info');
-            } catch (err) {
-                toast('Retry failed: ' + err.message, 'error');
-                retryBtn.disabled = false;
-                retryBtn.textContent = '↻';
-            }
-            return;
-        }
-    });
 
     // Settings button
     btnSettings.addEventListener('click', () => {
@@ -2740,15 +2438,11 @@
     eventStream.on('job_created', (data) => {
         _activeJobs.add(data.job_id);  // Mark new jobs as active
         jobs[data.job_id] = data;
-        renderJob(data);
-        maybeRevealQueue();
     });
 
     eventStream.on('job_update', (data) => {
         const prevJob = jobs[data.job_id];
         jobs[data.job_id] = data;
-        renderJob(data);
-        maybeRevealQueue();
 
         // Update status container for the job linked to the current preview
         if (data.job_id === _focusedJobId) {
@@ -2865,27 +2559,7 @@
     // Poll every 3 seconds
     setInterval(fetchSystemStats, 3000);
 
-    // Delegated listener for track retry buttons across all job cards
-    if (queueList) {
-        queueList.addEventListener('click', async (e) => {
-            const retryBtn = e.target.closest('.track-retry-btn');
-            if (retryBtn) {
-                e.stopPropagation();
-                const jobId = retryBtn.dataset.jobId;
-                const trackIndex = parseInt(retryBtn.dataset.trackIndex, 10);
-                retryBtn.disabled = true;
-                retryBtn.textContent = '…';
-                try {
-                    await api.retryTrack(jobId, trackIndex);
-                    toast('Retrying track…', 'info');
-                } catch (err) {
-                    toast('Retry failed: ' + err.message, 'error');
-                    retryBtn.disabled = false;
-                    retryBtn.textContent = '↻';
-                }
-            }
-        });
-    }
+
 
 
     // ── Init ──────────────────────────────────────────────────────────────
@@ -2901,17 +2575,11 @@
                 const existingJobs = await api.getDownloads();
                 for (const job of existingJobs) {
                     jobs[job.job_id] = job;
-                    renderJob(job);
                     // Mark completed jobs so they don't trigger auto-download on SSE reconnect
                     if (job.stage === 'done') {
                         _savedJobs.add(job.job_id);
                     }
                 }
-                // If a download was already in flight when the page loaded,
-                // surface the queue — there's no preview/status-bar context on
-                // a fresh load, so otherwise it would be invisible.
-                if (activeJobCount() > 0) revealQueue();
-                else renderQueueSummary();
             } catch (e) {
                 console.error('Failed to load downloads:', e);
             }

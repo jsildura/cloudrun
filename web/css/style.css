@@ -307,6 +307,19 @@ a:hover {
     display: flex;
     gap: 10px;
     align-items: stretch;
+    transition: opacity var(--transition-fast);
+}
+
+.url-input-wrap.disabled {
+    opacity: 0.38;
+    pointer-events: none;
+    cursor: not-allowed;
+}
+
+.url-input-wrap.disabled input,
+.url-input-wrap.disabled button {
+    cursor: not-allowed;
+    pointer-events: none;
 }
 
 .url-input-inner {
@@ -421,371 +434,6 @@ a:hover {
     pointer-events: none;
 }
 
-
-/* ── Download Queue ────────────────────────────────────────────────────────── */
-.queue-section {
-    display: none;
-    animation: fadeSlideUp 0.3s ease;
-}
-
-.queue-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 16px;
-}
-
-.queue-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin-bottom: 16px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.queue-header .queue-title {
-    margin-bottom: 0;
-}
-
-.queue-summary-chip {
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    background: var(--bg-tertiary);
-    padding: 3px 10px;
-    border-radius: 100px;
-    letter-spacing: 0.02em;
-    white-space: nowrap;
-}
-
-.queue-summary-chip[hidden] {
-    display: none;
-}
-
-.queue-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-
-/* ── Job Card ──────────────────────────────────────────────────────────────── */
-.job-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-}
-
-.job-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 14px 16px;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-}
-
-.job-header:hover {
-    background: var(--bg-hover);
-}
-
-.job-url {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 70%;
-    margin-right: auto;
-}
-
-.job-cancel-btn {
-    flex-shrink: 0;
-    width: 24px;
-    height: 24px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 0.85rem;
-    line-height: 1;
-    cursor: pointer;
-    transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.job-cancel-btn:hover {
-    background: var(--error-bg);
-    color: var(--error);
-}
-
-.job-cancel-btn:disabled {
-    cursor: default;
-}
-
-.job-status {
-    font-size: 0.75rem;
-    font-weight: 500;
-    padding: 4px 10px;
-    border-radius: 100px;
-    text-transform: capitalize;
-}
-
-.job-status.queued {
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
-}
-
-.job-status.parsing,
-.job-status.preparing {
-    background: var(--warning-bg);
-    color: var(--warning);
-}
-
-.job-status.downloading,
-.job-status.decrypting,
-.job-status.remuxing,
-.job-status.tagging {
-    background: rgba(10, 132, 255, 0.12);
-    color: #0a84ff;
-}
-
-.job-status.done {
-    background: var(--success-bg);
-    color: var(--success);
-}
-
-.job-status.error {
-    background: var(--error-bg);
-    color: var(--error);
-}
-
-.job-status.cancelled {
-    background: var(--bg-tertiary);
-    color: var(--text-muted);
-}
-
-.job-tracks {
-    display: none;
-    border-top: 1px solid var(--border);
-}
-
-.job-card.expanded .job-tracks {
-    display: block;
-}
-
-
-/* ── Track Item ────────────────────────────────────────────────────────────── */
-.track-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
-    transition: background var(--transition-fast);
-}
-
-.track-item:not(:last-child) {
-    border-bottom: 1px solid var(--border);
-}
-
-.track-item:hover {
-    background: rgba(255, 255, 255, 0.02);
-}
-
-.track-cover {
-    width: 44px;
-    height: 44px;
-    border-radius: var(--radius-sm);
-    background: var(--bg-tertiary);
-    overflow: hidden;
-    flex-shrink: 0;
-}
-
-.track-cover img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.track-info {
-    flex: 1;
-    min-width: 0;
-}
-
-.track-title {
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: var(--text-primary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.track-artist {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.track-status-icon {
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    font-size: 0.8rem;
-}
-
-.track-status-icon.downloading {
-    color: #0a84ff;
-    animation: pulse 1.5s ease-in-out infinite;
-}
-
-.track-status-icon.done {
-    color: var(--success);
-}
-
-.track-status-icon.error {
-    color: var(--error);
-}
-
-.track-status-icon.queued {
-    color: var(--text-muted);
-}
-
-
-/* ── Progress bar ──────────────────────────────────────────────────────────── */
-.track-progress {
-    width: 100%;
-    height: 3px;
-    background: var(--bg-tertiary);
-    border-radius: 2px;
-    margin-top: 6px;
-    overflow: hidden;
-}
-
-.track-progress-bar {
-    height: 100%;
-    background: var(--accent-gradient);
-    border-radius: 2px;
-    transition: width 0.5s ease;
-    box-shadow: 0 0 8px var(--accent-glow);
-}
-
-/* Live sub-stage caption (Decrypting…/Remuxing…/Tagging…) under a track */
-.track-stage-detail {
-    font-size: 0.72rem;
-    color: var(--accent);
-    margin-top: 2px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    animation: pulse 1.6s ease-in-out infinite;
-}
-
-
-/* ── Save buttons ──────────────────────────────────────────────────────── */
-.track-save-btn {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--accent-gradient);
-    border: none;
-    border-radius: var(--radius-sm);
-    color: #fff;
-    font-size: 1rem;
-    font-weight: 700;
-    text-decoration: none;
-    flex-shrink: 0;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    -webkit-tap-highlight-color: transparent;
-}
-
-.track-save-btn:hover {
-    transform: scale(1.1);
-    box-shadow: var(--shadow-glow);
-    color: #fff;
-}
-
-
-
-/* ── Retry buttons ─────────────────────────────────────────────────────── */
-.track-retry-btn {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(255, 214, 10, 0.15);
-    border: 1px solid rgba(255, 214, 10, 0.3);
-    border-radius: var(--radius-sm);
-    color: var(--warning);
-    font-size: 1.1rem;
-    font-weight: 700;
-    flex-shrink: 0;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    -webkit-tap-highlight-color: transparent;
-}
-
-.track-retry-btn:hover {
-    background: rgba(255, 214, 10, 0.25);
-    border-color: var(--warning);
-    transform: scale(1.1);
-}
-
-.track-retry-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
-}
-
-.job-retry-all {
-    padding: 10px 16px;
-    border-top: 1px solid var(--border);
-}
-
-.btn-retry-all {
-    width: 100%;
-    height: 44px;
-    background: rgba(255, 214, 10, 0.1);
-    border: 1px solid rgba(255, 214, 10, 0.25);
-    border-radius: var(--radius-sm);
-    color: var(--warning);
-    font-family: var(--font);
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    -webkit-tap-highlight-color: transparent;
-}
-
-.btn-retry-all:hover {
-    background: rgba(255, 214, 10, 0.2);
-    border-color: var(--warning);
-}
-
-.btn-retry-all:active {
-    transform: scale(0.97);
-}
-
-.btn-retry-all:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
-}
 
 
 /* ── Modals ─────────────────────────────────────────────────────────────────── */
@@ -1682,6 +1330,18 @@ a:hover {
     animation: fadeIn 0.3s ease;
 }
 
+.status-text.saved {
+    color: var(--success);
+    font-weight: 500;
+}
+
+.status-saved-check {
+    display: inline-block;
+    margin-right: 0.35em;
+    font-weight: 700;
+    color: var(--success);
+}
+
 .status-progress-bar {
     width: 100%;
     height: 4px;
@@ -1832,31 +1492,6 @@ a:hover {
     border-radius: var(--radius-lg);
     overflow: hidden;
     position: relative;
-}
-
-.preview-close-btn {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    z-index: 3;
-    width: 28px;
-    height: 28px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.35);
-    color: #fff;
-    font-size: 0.9rem;
-    line-height: 1;
-    cursor: pointer;
-    transition: background var(--transition-fast);
-}
-
-.preview-close-btn:hover {
-    background: rgba(0, 0, 0, 0.6);
 }
 
 .preview-header {
@@ -2059,10 +1694,11 @@ a:hover {
 }
 
 .preview-download-btn:disabled {
-    opacity: 0.5;
+    opacity: 0.4;
     cursor: not-allowed;
     transform: translateY(-50%);
     box-shadow: none;
+    pointer-events: none;
 }
 
 .status-cancel-text {
@@ -2541,7 +2177,11 @@ a:hover {
     }
 
     .preview-download-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
         transform: none;
+        box-shadow: none;
+        pointer-events: none;
     }
 
     .preview-genre {

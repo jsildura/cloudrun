@@ -83,10 +83,26 @@ class AppleMusicBaseDownloader:
         self._initialize_cdm()
 
     def _initialize_binary_paths(self):
-        self.full_nm3u8dlre_path = shutil.which(self.nm3u8dlre_path)
-        self.full_mp4decrypt_path = shutil.which(self.mp4decrypt_path)
-        self.full_ffmpeg_path = shutil.which(self.ffmpeg_path)
-        self.full_mp4box_path = shutil.which(self.mp4box_path)
+        repo_root = Path(__file__).resolve().parents[2]
+        bin_dir = repo_root / "bin"
+
+        def _resolve(name):
+            if not name:
+                return None
+            found = shutil.which(name)
+            if found:
+                return found
+            # Check local bin/ and repo root
+            for search_dir in (bin_dir, repo_root):
+                for candidate in (search_dir / name, search_dir / f"{name}.exe"):
+                    if candidate.is_file():
+                        return str(candidate)
+            return None
+
+        self.full_nm3u8dlre_path = _resolve(self.nm3u8dlre_path)
+        self.full_mp4decrypt_path = _resolve(self.mp4decrypt_path)
+        self.full_ffmpeg_path = _resolve(self.ffmpeg_path)
+        self.full_mp4box_path = _resolve(self.mp4box_path)
 
     def _initialize_cdm(self):
         if self.wvd_path:
