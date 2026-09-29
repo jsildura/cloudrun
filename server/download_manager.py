@@ -817,12 +817,12 @@ class DownloadManager:
         return job
 
     async def _probe_connectivity(self) -> bool:
-        """Send a quick test request to Apple Music API to verify the
-        WARP proxy tunnel is alive.
+        """Send a quick test request through the proxy to verify the
+        WARP tunnel is alive and ready to handle download traffic.
 
-        Returns True if the network path works, False if all retries fail.
-        The first attempt often 'wakes up' a sleeping WireGuard tunnel,
-        so we retry up to 3 times with short delays.
+        Uses Cloudflare's diagnostic trace endpoint with realistic browser headers
+        to wake up the WireGuard tunnel without generating suspicious bot traffic
+        to Apple Music's API endpoints.
         """
         import httpx as _httpx
 
@@ -838,7 +838,15 @@ class DownloadManager:
             # No proxy configured — assume direct connectivity is fine
             return True
 
-        target_url = "https://amp-api.music.apple.com"
+        target_url = "https://www.cloudflare.com/cdn-cgi/trace"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/137.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
         max_attempts = 3
         delay_between = 2  # seconds
 
@@ -846,14 +854,17 @@ class DownloadManager:
             try:
                 async with _httpx.AsyncClient(
                     proxy=proxy_url,
+                    headers=headers,
                     timeout=10.0,
                 ) as client:
-                    response = await client.head(target_url)
-                    logger.info(
-                        "Connectivity probe succeeded (attempt %d/%d, HTTP %s)",
-                        attempt, max_attempts, response.status_code,
-                    )
-                    return True
+                    response = await client.get(target_url)
+                    if response.status_code == 200:
+                        is_warp = "warp=on" in response.text or "warp=plus" in response.text
+                        logger.info(
+                            "Connectivity probe succeeded (attempt %d/%d, HTTP %s, WARP=%s)",
+                            attempt, max_attempts, response.status_code, is_warp,
+                        )
+                        return True
             except Exception as e:
                 logger.warning(
                     "Connectivity probe failed (attempt %d/%d): %s",

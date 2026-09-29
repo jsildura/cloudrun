@@ -772,3 +772,23 @@ Enabling outbound proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL
    - Loopback immunity remains untouched: `check_wrapper_healthy()` and `gamdl/utils.py` continue to bypass proxies for `127.0.0.1`, preserving all wrapper communication (ports 10020, 20020, 30020, 40020) and Docker health checks.
 - **Files modified:** `docker-compose.yml`, `gamdl/downloader/downloader_base.py`, `latest_changes_reference.md`
 
+---
+
+## Update: Layer 2 Hardening — De-Weaponize Keepalive & Connectivity Probing
+
+### 1. Problem & Threat Model
+- **Clockwork Bot Probing to Apple API:** The previous implementation sent unauthenticated `HEAD https://amp-api.music.apple.com` requests every 300.00s clockwork (0s jitter) with a default Python user agent (`python-httpx/0.28.1`). Apple's edge WAF (Akamai/Apple CDN) received 288 automated probes daily from the WARP egress IP with bot headers, acting as an identifiable beacon.
+- **Premature Endpoint Pinging Before Downloads:** `_probe_connectivity()` in `download_manager.py` also sent a bare `HEAD` request to `amp-api.music.apple.com` prior to every download job, accumulating unnecessary bot signals.
+
+### 2. Implemented Safeguards & Changes
+1. **Target Rerouted to Cloudflare Diagnostic Trace (`server/main.py`, `server/download_manager.py`):**
+   - Rerouted keepalive and connectivity probe targets from `https://amp-api.music.apple.com` to `https://www.cloudflare.com/cdn-cgi/trace`.
+   - Because Cloudflare WARP is a WireGuard connection terminating at Cloudflare's edge, querying Cloudflare's native trace endpoint fulfills the exact purpose of keeping the WireGuard tunnel warm and cryptographic session keys active without sending a single byte of probe traffic to Apple.
+   - The trace response verifies proxy health by inspecting `status_code == 200` and validates tunnel status by checking for `warp=on` or `warp=plus`.
+2. **Realistic Browser Headers:**
+   - Both `_warp_keepalive_loop()` and `_probe_connectivity()` now explicitly supply browser-grade `User-Agent` (`Mozilla/5.0 ... Chrome/137.0.0.0 Safari/537.36`) and `Accept` headers, eliminating `python-httpx` user agent leakage.
+3. **Randomized Interval Jitter:**
+   - Updated `_WARP_KEEPALIVE_INTERVAL` to a base of 270s (4.5 minutes) with dynamic random jitter (`jitter = random.randint(-30, 30)` -> 240s to 300s). This breaks deterministic clockwork periodicity and thwarts frequency-based automated traffic analysis.
+- **Files modified:** `server/main.py`, `server/download_manager.py`, `latest_changes_reference.md`
+
+

@@ -6,6 +6,7 @@ Serves both the REST API and the static frontend.
 import asyncio
 import logging
 import os
+import random
 import httpx
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -29,15 +30,15 @@ logging.basicConfig(
 
 _CLEANUP_INTERVAL = 60  # seconds
 
-_WARP_KEEPALIVE_INTERVAL = 300  # 5 minutes
+_WARP_KEEPALIVE_INTERVAL = 270  # ~4.5 minutes base interval
 
 
 async def _warp_keepalive_loop() -> None:
-    """Send a lightweight request through the WARP proxy every 5 minutes
-    to prevent the WireGuard tunnel from dropping its encryption keys.
+    """Send a lightweight request through the WARP proxy to prevent the
+    WireGuard tunnel from dropping its session keys during periods of inactivity.
 
-    Without this, the tunnel dies after ~9 minutes of inactivity, causing
-    all subsequent download requests to hang silently.
+    Uses Cloudflare's native diagnostic endpoint with randomized jitter and realistic
+    browser headers to keep the tunnel warm without emitting bot signals to Apple Music.
     """
     proxy_url = (
         os.environ.get("HTTPS_PROXY")
@@ -51,25 +52,41 @@ async def _warp_keepalive_loop() -> None:
         logger.info("WARP keepalive: no proxy configured, skipping")
         return
 
-    # Target: Apple Music API origin — lightweight HEAD request
-    target_url = "https://amp-api.music.apple.com"
+    target_url = "https://www.cloudflare.com/cdn-cgi/trace"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/137.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
 
     while True:
-        await asyncio.sleep(_WARP_KEEPALIVE_INTERVAL)
+        # Randomized jitter (240s - 300s) to avoid deterministic clockwork frequency signatures
+        jitter = random.randint(-30, 30)
+        sleep_duration = max(60, _WARP_KEEPALIVE_INTERVAL + jitter)
+        await asyncio.sleep(sleep_duration)
+
         try:
             async with httpx.AsyncClient(
                 proxy=proxy_url,
+                headers=headers,
                 timeout=10.0,
             ) as client:
                 start = asyncio.get_event_loop().time()
-                response = await client.head(target_url)
+                response = await client.get(target_url)
                 elapsed_ms = int((asyncio.get_event_loop().time() - start) * 1000)
+                is_warp = "warp=on" in response.text or "warp=plus" in response.text
+                status_extra = " [WARP active]" if is_warp else ""
                 logger.info(
-                    "WARP keepalive: tunnel alive (HTTP %s, %dms)",
-                    response.status_code, elapsed_ms,
+                    "WARP keepalive: tunnel alive (HTTP %s, %dms)%s",
+                    response.status_code, elapsed_ms, status_extra,
                 )
         except Exception as e:
-            logger.warning("WARP keepalive: tunnel unreachable (%s) — will retry in %ds", e, _WARP_KEEPALIVE_INTERVAL)
+            logger.warning(
+                "WARP keepalive: tunnel check failed (%s) — will retry", e
+            )
 
 
 _WRAPPER_WATCHDOG_INTERVAL = 60  # Check wrapper health every 60 seconds
@@ -184,7 +201,7 @@ async def lifespan(app: FastAPI):
 
     # Start WARP tunnel keep-alive heartbeat
     keepalive_task = asyncio.create_task(_warp_keepalive_loop())
-    logger.info("WARP keepalive loop started (every %ds)", _WARP_KEEPALIVE_INTERVAL)
+    logger.info("WARP keepalive loop started (base: %ds with jitter)", _WARP_KEEPALIVE_INTERVAL)
 
     # Start Wrapper auto-restart watchdog
     wrapper_watchdog_task = asyncio.create_task(_wrapper_watchdog_loop())
