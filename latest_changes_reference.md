@@ -813,5 +813,26 @@ Enabling outbound proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL
    - Whitelisted `!setup_caddy.sh` so configuration scripts are tracked and easily pulled to the EC2 server.
 - **Files modified:** `setup_caddy.sh`, `start.sh`, `.gitignore`, `latest_changes_reference.md`
 
+---
+
+## Update: Layer 4 Hardening — Request Cadence Micro-Jitter (Anti-Scraping / Burst Defense)
+
+### 1. Problem & Threat Model
+- **Instantaneous Concurrency Spikes in Queue Building:** When parsing an album or playlist containing 20+ tracks, `safe_gather` dispatched 10 concurrent requests at the exact same millisecond ($t=0.000\text{s}$). Concurrency bursts against Apple's API frequently trip edge heuristic rate limiters, resulting in intermittent `HTTP 429 Too Many Requests`.
+- **Clockwork Inter-Track Interval Fingerprint:** Downloading multi-track albums paused for *exactly* `config.rate_limit_delay` (e.g. exactly 7.0000s) between every track. Fixed, deterministic intervals are a known heuristic marker for automated scraping bots.
+
+### 2. Implemented Safeguards & Changes
+1. **Concurrent Micro-Staggering (`gamdl/utils.py`):**
+   - Updated `safe_gather()` to include micro-staggering (`stagger=0.05s` with dynamic random variance of `10ms` to `40ms`).
+   - Tasks entering the semaphore are launched with a gentle 50–90ms offset, spreading batch queries across ~0.5–0.8s instead of hitting Apple's API in a single instant burst.
+2. **Natural Inter-Track Delay Jitter (`server/download_manager.py`):**
+   - Added `_get_jittered_delay(base_delay: float)` helper to `DownloadManager`.
+   - The user's configured **Rate Limit Delay** setting in the Web UI remains the primary anchor value.
+   - For a base setting of 7.0s, the delay naturally fluctuates between ~6.3s and 8.05s (±10–15% variance, rounded to 2 decimals), breaking the robotic clockwork timing pattern.
+   - If the user configures `0` in settings, delay is completely bypassed (`0.0s`), fully preserving user configuration intent.
+   - Applied to both primary track download loop (`_process_job_inner`) and failed track retries (`retry_failed_tracks`).
+- **Files modified:** `gamdl/utils.py`, `server/download_manager.py`, `latest_changes_reference.md`
+
+
 
 

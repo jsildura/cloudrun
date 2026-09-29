@@ -1,5 +1,6 @@
 import asyncio
 import json
+import random
 import string
 import subprocess
 import typing
@@ -85,11 +86,16 @@ async def emit_progress(
 async def safe_gather(
     *tasks: typing.Awaitable[typing.Any],
     limit: int = 10,
+    stagger: float = 0.05,
 ) -> list[typing.Any]:
     semaphore = asyncio.Semaphore(limit)
+    stagger_lock = asyncio.Lock()
 
     async def bounded_task(task: typing.Awaitable[typing.Any]) -> typing.Any:
         async with semaphore:
+            if stagger > 0:
+                async with stagger_lock:
+                    await asyncio.sleep(stagger + random.uniform(0.01, 0.04))
             return await task
 
     return await asyncio.gather(

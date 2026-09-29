@@ -8,6 +8,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import random
 import shutil
 import tempfile
 import time
@@ -876,6 +877,19 @@ class DownloadManager:
         logger.error("Connectivity probe failed after %d attempts", max_attempts)
         return False
 
+    @staticmethod
+    def _get_jittered_delay(base_delay: float) -> float:
+        """Calculate inter-track delay with natural micro-jitter around user's base setting.
+
+        If base_delay <= 0, returns 0.0 (disabled).
+        Otherwise adds a ±10-15% natural variation (clamped to a safe minimum)
+        to prevent machine-exact clockwork delays between downloads.
+        """
+        if base_delay <= 0:
+            return 0.0
+        jitter = random.uniform(-0.1 * base_delay, 0.15 * base_delay)
+        return max(0.5, round(base_delay + jitter, 2))
+
     def _make_progress_handler(self, job: DownloadJob, track_index: int):
         """Build an async on_progress callback for a single track.
 
@@ -1146,9 +1160,12 @@ class DownloadManager:
                     await self._broadcast_job(job)
                     continue
 
-                # Rate-limit delay before each track (except the first)
-                if i > 0:
-                    await asyncio.sleep(config.rate_limit_delay)
+                # Rate-limit delay before each track (except the first) with micro-jitter
+                if i > 0 and config.rate_limit_delay > 0:
+                    delay = self._get_jittered_delay(config.rate_limit_delay)
+                    if delay > 0:
+                        logger.debug("Inter-track delay: %.2fs (base: %.1fs)", delay, config.rate_limit_delay)
+                        await asyncio.sleep(delay)
 
                 job.current_track = i + 1
                 job.tracks[i].stage = DownloadStage.DOWNLOADING
@@ -1831,9 +1848,12 @@ class DownloadManager:
                     continue
                 track = job.tracks[track_index]
 
-                # Rate-limit delay between retries (except the first)
-                if idx > 0:
-                    await asyncio.sleep(config.rate_limit_delay)
+                # Rate-limit delay between retries (except the first) with micro-jitter
+                if idx > 0 and config.rate_limit_delay > 0:
+                    delay = self._get_jittered_delay(config.rate_limit_delay)
+                    if delay > 0:
+                        logger.debug("Retry inter-track delay: %.2fs (base: %.1fs)", delay, config.rate_limit_delay)
+                        await asyncio.sleep(delay)
 
                 track.stage = DownloadStage.DOWNLOADING
                 track.error_message = None
