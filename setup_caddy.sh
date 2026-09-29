@@ -11,8 +11,9 @@ sudo apt-get install -y caddy
 echo "=== Configuring Caddy ==="
 sudo tee /etc/caddy/Caddyfile > /dev/null <<'EOF'
 amdlxd.duckdns.org {
-    # Remove Caddy's own Server header
+    # Remove Caddy's own Server and Via headers
     header -Server
+    header -Via
 
     # Security & OPSEC anti-indexing headers
     header {
@@ -22,8 +23,9 @@ amdlxd.duckdns.org {
     }
 
     reverse_proxy localhost:8000 {
-        # Remove backend Uvicorn Server header if present
+        # Remove backend upstream Server and Via headers if present
         header_down -Server
+        header_down -Via
     }
 }
 EOF
