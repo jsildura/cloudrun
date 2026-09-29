@@ -19,6 +19,7 @@ __pycache__
 !pyproject.toml
 !README.md
 !start.sh
+!setup_caddy.sh
 !.dockerignore
 !uv.lock
 !docs

@@ -791,4 +791,27 @@ Enabling outbound proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL
    - Updated `_WARP_KEEPALIVE_INTERVAL` to a base of 270s (4.5 minutes) with dynamic random jitter (`jitter = random.randint(-30, 30)` -> 240s to 300s). This breaks deterministic clockwork periodicity and thwarts frequency-based automated traffic analysis.
 - **Files modified:** `server/main.py`, `server/download_manager.py`, `latest_changes_reference.md`
 
+---
+
+## Update: Layer 3 Hardening — Inbound Origin Shielding & Caddy Header Stripping
+
+### 1. Problem & Threat Model
+- **Banner Grabbing & Automated Reconnaissance:** Automated scanners (Shodan, Censys, ZoomEye) continuously crawl the public IPv4 space and catalog web servers returning `Server: Caddy` or `Server: uvicorn`. Exposing server banners facilitates reconnaissance and marks the endpoint for software-specific exploit indexing.
+- **Search Engine & Crawler Indexing:** Without explicit anti-indexing directives, web crawlers, search engines, and web archivers can index the DuckDNS domain (`amdlxd.duckdns.org`), exposing the service publicly.
+
+### 2. Implemented Safeguards & Changes
+1. **Caddyfile Server Header Stripping (`setup_caddy.sh`):**
+   - Added `header -Server` to remove Caddy's own server banner on outbound HTTP responses.
+   - Added `header_down -Server` within the `reverse_proxy localhost:8000` block to strip any upstream `Server: uvicorn` header emitted by FastAPI/Uvicorn.
+2. **Anti-Indexing & OPSEC Security Headers:**
+   - Injected `X-Robots-Tag: noindex, nofollow, noarchive` to instruct search engines, automated scrapers, and web archivers to drop the domain from indexing.
+   - Injected `X-Content-Type-Options: nosniff` to enforce strict MIME-type checking.
+   - Injected `Referrer-Policy: strict-origin-when-cross-origin` to prevent internal query strings or paths from leaking to third parties.
+3. **Uvicorn Daemon Hardening (`start.sh`):**
+   - Added `--no-server-header` and `--proxy-headers` to the Uvicorn execution command, suppressing application-level server banners at the origin.
+4. **Whitelisted `setup_caddy.sh` (`.gitignore`):**
+   - Whitelisted `!setup_caddy.sh` so configuration scripts are tracked and easily pulled to the EC2 server.
+- **Files modified:** `setup_caddy.sh`, `start.sh`, `.gitignore`, `latest_changes_reference.md`
+
+
 

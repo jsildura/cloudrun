@@ -44,4 +44,4 @@ done) &
 
 # Start the FastAPI backend
 echo "[3/3] Starting Gamdl Backend on port ${PORT:-8000}..."
-exec uvicorn server.main:app --host 0.0.0.0 --port "${PORT:-8000}" --workers 1
+exec uvicorn server.main:app --host 0.0.0.0 --port "${PORT:-8000}" --workers 1 --no-server-header --proxy-headers
