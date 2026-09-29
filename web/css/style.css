@@ -1331,7 +1331,7 @@ a:hover {
 }
 
 .status-text.saved {
-    color: var(--success);
+    color: var(--text-muted);
     font-weight: 500;
 }
 
@@ -1339,7 +1339,7 @@ a:hover {
     display: inline-block;
     margin-right: 0.35em;
     font-weight: 700;
-    color: var(--success);
+    color: var(--text-muted);
 }
 
 .status-progress-bar {
@@ -1508,7 +1508,7 @@ a:hover {
     display: grid;
 }
 
-.preview-artwork-wrapper > * {
+.preview-artwork-wrapper>* {
     grid-area: 1 / 1;
 }
 
@@ -2076,7 +2076,7 @@ a:hover {
 }
 
 .preview-track-status.done {
-    color: var(--success);
+    color: var(--text-muted);
     font-weight: 700;
 }
 

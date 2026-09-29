@@ -25,7 +25,9 @@ async def get_response(
     url: str,
     valid_responses: set[int] = {200},
 ) -> httpx.Response:
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    # If connecting to local wrapper or loopback, bypass environment proxies entirely
+    is_local = "127.0.0.1" in url or "localhost" in url
+    async with httpx.AsyncClient(timeout=60.0, trust_env=not is_local) as client:
         response = await client.get(url)
         raise_for_status(response, valid_responses)
         return response

@@ -194,4 +194,3 @@ class ReserveUnlockResponse(BaseModel):
 class ReserveConnectResponse(BaseModel):
     token: str
     auth_status: AuthStatus
-

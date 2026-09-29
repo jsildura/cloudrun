@@ -1,4 +1,5 @@
 import asyncio
+import os
 import re
 import shutil
 import uuid
@@ -277,25 +278,35 @@ class AppleMusicBaseDownloader:
         )
 
     def _download_ytdlp(self, stream_url: str, download_path: str) -> None:
-        with YoutubeDL(
-            {
-                "quiet": True,
-                "no_warnings": True,
-                "outtmpl": download_path,
-                "allow_unplayable_formats": True,
-                "overwrites": True,
-                "fixup": "never",
-                "noprogress": self.silent,
-                "allowed_extractors": ["generic"],
-            }
-        ) as ydl:
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "outtmpl": download_path,
+            "allow_unplayable_formats": True,
+            "overwrites": True,
+            "fixup": "never",
+            "noprogress": self.silent,
+            "allowed_extractors": ["generic"],
+        }
+        proxy = (
+            os.environ.get("ALL_PROXY")
+            or os.environ.get("all_proxy")
+            or os.environ.get("HTTPS_PROXY")
+            or os.environ.get("https_proxy")
+            or os.environ.get("HTTP_PROXY")
+            or os.environ.get("http_proxy")
+        )
+        if proxy:
+            ydl_opts["proxy"] = proxy
+
+        with YoutubeDL(ydl_opts) as ydl:
             ydl.download(stream_url)
 
     async def download_nm3u8dlre(self, stream_url: str, download_path: str):
         download_path_obj = Path(download_path)
 
         download_path_obj.parent.mkdir(parents=True, exist_ok=True)
-        await async_subprocess(
+        args = [
             self.full_nm3u8dlre_path,
             stream_url,
             "--binary-merge",
@@ -310,6 +321,22 @@ class AppleMusicBaseDownloader:
             download_path_obj.parent,
             "--tmp-dir",
             download_path_obj.parent,
+        ]
+        proxy = (
+            os.environ.get("ALL_PROXY")
+            or os.environ.get("all_proxy")
+            or os.environ.get("HTTPS_PROXY")
+            or os.environ.get("https_proxy")
+            or os.environ.get("HTTP_PROXY")
+            or os.environ.get("http_proxy")
+        )
+        if proxy:
+            # N_m3u8DL-RE expects socks5:// format for SOCKS proxies
+            re_proxy = proxy.replace("socks5h://", "socks5://")
+            args.extend(["--custom-proxy", re_proxy])
+
+        await async_subprocess(
+            *args,
             silent=self.silent,
         )
 

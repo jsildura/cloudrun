@@ -826,7 +826,14 @@ class DownloadManager:
         """
         import httpx as _httpx
 
-        proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("ALL_PROXY")
+        proxy_url = (
+            os.environ.get("HTTPS_PROXY")
+            or os.environ.get("https_proxy")
+            or os.environ.get("ALL_PROXY")
+            or os.environ.get("all_proxy")
+            or os.environ.get("HTTP_PROXY")
+            or os.environ.get("http_proxy")
+        )
         if not proxy_url:
             # No proxy configured — assume direct connectivity is fine
             return True
@@ -2013,3 +2020,4 @@ def check_semaphore_health() -> None:
                     job_id,
                 )
                 _download_semaphore.release()
+                

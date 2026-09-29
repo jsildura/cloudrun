@@ -1309,7 +1309,7 @@
             previewSaveArtworkBtn.title = "Save Animated Artwork";
             previewSaveArtworkBtn.dataset.url = data.animated_artwork_url;
             previewSaveArtworkBtn.dataset.type = "video/mp4";
-            
+
             // Animated artwork — show looping silent video
             previewArtwork.style.display = 'none';
 
@@ -1355,7 +1355,7 @@
             previewSaveArtworkBtn.title = "Save Artwork";
             previewSaveArtworkBtn.dataset.url = data.artwork_url;
             previewSaveArtworkBtn.dataset.type = "image/jpeg";
-            
+
             // Static artwork — standard image
             // Remove any existing video
             const existingVideo = previewArtwork.parentElement.querySelector('.preview-artwork-video');
@@ -1959,7 +1959,7 @@
         e.stopPropagation();
         const url = previewSaveArtworkBtn.dataset.url;
         if (!url) return;
-        
+
         const type = previewSaveArtworkBtn.dataset.type;
         const ext = type === 'video/mp4' ? 'mp4' : 'jpg';
         const filename = `artwork.${ext}`;
@@ -1997,14 +1997,14 @@
             if (!resp.ok) throw new Error('Network response was not ok');
             const blob = await resp.blob();
             const blobUrl = URL.createObjectURL(blob);
-            
+
             const a = document.createElement('a');
             a.href = blobUrl;
             a.download = filename;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            
+
             setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
             toast('Artwork saved', 'success');
         } catch (err) {

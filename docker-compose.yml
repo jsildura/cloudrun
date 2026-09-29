@@ -1,0 +1,40 @@
+services:
+  warp-proxy:
+    image: monius/docker-warp-socks
+    container_name: warp-proxy
+    restart: always
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv4.conf.all.src_valid_mark=1
+    ports:
+      - '8000:8000'
+    volumes:
+      - warp-data:/var/lib/cloudflare-warp
+
+  gamdl-backend:
+    image: gamdl-gamdl-backend:with-new-wrapper
+    container_name: gamdl-backend
+    privileged: true
+    restart: always
+    network_mode: "service:warp-proxy"
+    environment:
+      - PORT=8000
+      - CLOUD_MODE=false
+      - HTTPS_PROXY=socks5h://127.0.0.1:9091
+      - HTTP_PROXY=socks5h://127.0.0.1:9091
+      - ALL_PROXY=socks5h://127.0.0.1:9091
+      - https_proxy=socks5h://127.0.0.1:9091
+      - http_proxy=socks5h://127.0.0.1:9091
+      - all_proxy=socks5h://127.0.0.1:9091
+      - NO_PROXY=localhost,127.0.0.1,::1
+      - no_proxy=localhost,127.0.0.1,::1
+    volumes:
+      - ./downloads:/app/downloads
+    depends_on:
+      - warp-proxy
+
+volumes:
+  warp-data:

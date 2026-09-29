@@ -5,6 +5,18 @@ echo "============================================"
 echo "  gamdl — Hugging Face Spaces Startup"
 echo "============================================"
 
+# Wait for proxy if configured to ensure wrapper doesn't fail on cold boot
+if [ -n "$ALL_PROXY" ] || [ -n "$HTTPS_PROXY" ]; then
+    echo "Waiting for proxy to become ready..."
+    for i in $(seq 1 20); do
+        if python3 -c "import socket; s=socket.create_connection(('127.0.0.1', 9091), timeout=1); s.close()" 2>/dev/null; then
+            echo "  ✓ Proxy is ready"
+            break
+        fi
+        sleep 1
+    done
+fi
+
 # Start the Wrapper in the background
 if [ -x /app/Wrapper/wrapper ]; then
     echo "[1/2] Starting Wrapper (ports 10020, 20020, 30020)..."

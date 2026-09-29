@@ -53,7 +53,7 @@ RUN chmod +x Wrapper/wrapper 2>/dev/null || true
 # ── Install gamdl package ────────────────────────────────────────────────────
 COPY pyproject.toml .
 COPY gamdl/ gamdl/
-RUN pip install --no-cache-dir . socksio
+RUN pip install --no-cache-dir . socksio PySocks
 
 # ── Install server dependencies ──────────────────────────────────────────────
 COPY server/requirements.txt server/
@@ -70,10 +70,13 @@ RUN chmod +x start.sh
 # ── Runtime configuration ────────────────────────────────────────────────────
 ENV PORT=8000
 ENV CLOUD_MODE=true
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV PYTHONIOENCODING=utf-8
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://localhost:'+os.environ.get('PORT','8000')+'/api/health')" || exit 1
+    CMD python -c "import os,urllib.request; opener=urllib.request.build_opener(urllib.request.ProxyHandler({})); opener.open('http://127.0.0.1:'+os.environ.get('PORT','8000')+'/api/health')" || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["bash", "start.sh"]

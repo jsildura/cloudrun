@@ -664,3 +664,111 @@ Applied, tested, and verified all 6 pending bug fixes tracked in `docs/` and `do
   - Updated `remux_mp4box` to include `-itags artist=placeholder -keep-utc -new` before `output_path`, aligning with `downloader_song.py` and MP4Box CLI syntax.
 - **Files modified:** `Dockerfile`, `gamdl/downloader/downloader_music_video.py`, `latest_changes_reference.md`
 
+## Changes Made (September 28, 2026)
+
+### 1. Fix: Wrapper Process Deadlock & Container Privilege Escalation
+
+- **Problem:** The wrapper service was stuck in an infinite restart loop. The `start.sh` watchdog detected the wrapper as unhealthy every ~2 minutes and kept restarting it, but it never recovered. All three wrapper ports (10020, 20020, 30020) remained closed. The API reported `{"available": false}`.
+- **Root Cause (Multi-layered):**
+  1. **Old wrapper binary deadlock:** The wrapper binary (Sep 1 build, 19KB launcher + 156KB `main`) started correctly and spawned its `main` child process (the Android emulation core that loads 98 `.so` libraries from `rootfs/system/lib64/`). However, `main` immediately deadlocked on `futex_do_wait` — a kernel-level mutex wait — and never progressed to opening TCP sockets. The process consumed ~25MB RAM and had only 3 file descriptors (stdin/stdout/stderr pipes), indicating it froze before any network initialization.
+  2. **New wrapper requires Linux namespaces:** Updating to the latest wrapper binary from [WorldObservationLog/wrapper](https://github.com/WorldObservationLog/wrapper/releases/tag/wrapper.x86_64.latest) (Aug 15, 2026 build, commit `4d83f2f`) resolved the deadlock but introduced new errors:
+     - `unshare: Operation not permitted` — the new wrapper uses Linux `unshare()` for process namespace isolation, which requires the `SYS_ADMIN` capability
+     - `mount /dev/urandom failed: Permission denied` — adding `--cap-add SYS_ADMIN` alone was insufficient because Docker's default AppArmor profile blocks mount operations
+     - `mount proc failed: Operation not permitted` — disabling AppArmor (`--security-opt apparmor=unconfined`) still failed because the default seccomp profile blocks certain mount syscalls
+  3. **Resolution:** Running the container with `--privileged` flag grants all capabilities and disables all security profiles, allowing the wrapper's `unshare()` + `mount()` namespace setup to work.
+- **Fix applied on EC2:**
+  ```bash
+  # 1. Downloaded latest wrapper binary from GitHub
+  cd /tmp
+  wget -q https://github.com/WorldObservationLog/wrapper/releases/download/wrapper.x86_64.latest/Wrapper.x86_64.latest.zip
+  unzip -o Wrapper.x86_64.latest.zip
+
+  # 2. Copied all new binaries and libraries into the running container
+  docker cp /tmp/rootfs/system/bin/main gamdl-backend:/app/Wrapper/rootfs/system/bin/main
+  docker cp /tmp/rootfs/system/bin/linker64 gamdl-backend:/app/Wrapper/rootfs/system/bin/linker64
+  for f in /tmp/rootfs/system/lib64/*.so; do
+    docker cp "$f" "gamdl-backend:/app/Wrapper/rootfs/system/lib64/$(basename $f)"
+  done
+  docker cp /tmp/wrapper gamdl-backend:/app/Wrapper/wrapper
+  docker exec gamdl-backend chmod +x /app/Wrapper/wrapper /app/Wrapper/rootfs/system/bin/main /app/Wrapper/rootfs/system/bin/linker64
+
+  # 3. Committed updated container as new image
+  docker commit gamdl-backend gamdl-gamdl-backend:with-new-wrapper
+
+  # 4. Recreated container with --privileged
+  docker stop gamdl-backend && docker rm gamdl-backend
+  docker run -d \
+    --name gamdl-backend \
+    --privileged \
+    --network gamdl_default \
+    -p 8000:8000 \
+    -e PORT=8000 \
+    -e CLOUD_MODE=false \
+    -v /home/ubuntu/gamdl/downloads:/app/downloads \
+    --restart always \
+    gamdl-gamdl-backend:with-new-wrapper
+  ```
+- **Fix (`docker-compose.yml`):**
+  - Added `privileged: true` to the `gamdl-backend` service so future `docker-compose up --build` deploys preserve the fix.
+- **New wrapper port:** The updated wrapper now listens on an additional port **40020** for key requests (in addition to existing 10020, 20020, 30020). The health check in `api_routes.py` only checks ports 10020 and 30020, which both work.
+- **Verification:** After fix, all wrapper ports reported OPEN and the API returned `{"available": true}`. The wrapper successfully authenticated with Apple Music services (FairPlay subscription status confirmed, music token generated).
+- **Files modified:** `docker-compose.yml`, `latest_changes_reference.md`
+
+### 2. Note: SSH Security Group Configuration
+
+- The EC2 SSH inbound rule (port 22) was set to a specific IP (`49.147.112.243/32`) which became stale when the user's dynamic IP changed to `103.107.83.161`. SSH connections timed out until the security group was updated.
+- For users with dynamic IPs, recommended options:
+  1. **EC2 Instance Connect** — Use AWS Console browser-based shell (no port 22 needed)
+  2. **Leave SSH open to `0.0.0.0/0`** — Acceptable when using key-based auth only (PEM file), password auth is disabled by default on Ubuntu EC2
+  3. **AWS Systems Manager Session Manager** — No SSH port required
+
+---
+
+## Update: Safe WARP Proxy Re-Enablement & Zero-Regression Immunization
+
+### 1. Background & Potential Risks Identified
+Enabling outbound proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`) without internal safeguards introduces several catastrophic failure modes:
+- **Wrapper Restart & Health Check Loops:** `urllib.request.urlopen` in `check_wrapper_healthy()` and `Dockerfile` `HEALTHCHECK` will parse `HTTP_PROXY`. If pointing to SOCKS5 or WARP, `urllib` throws unhandled scheme errors or routes `127.0.0.1` to WARP, causing the watchdog to endlessly kill/restart the wrapper and mark the container unhealthy.
+- **Download Failures:** `httpx` fetching account info from `127.0.0.1:30020` could be intercepted by proxy. Additionally, `yt-dlp` requires `PySocks` to handle SOCKS proxies; without it, media segment downloading crashes.
+- **Metadata Encoding Issues:** Non-ASCII artist/track names (Japanese, Cyrillic, accented characters) can fail on file operations if the container locale defaults to POSIX/ASCII.
+
+### 2. Implemented Safeguards & Code Fixes
+1. **Wrapper Health Check Immunization (`server/api_routes.py`):**
+   - Used `urllib.request.build_opener(urllib.request.ProxyHandler({}))` to explicitly bypass any proxy environment variables for `wrapper_account_url`.
+   - Added direct TCP socket fallback (`socket.create_connection(("127.0.0.1", 30020))`) so socket connectivity is verified even if HTTP stack fails.
+2. **Loopback Immunity in `gamdl/utils.py`:**
+   - `get_response()` checks `is_local = "127.0.0.1" in url or "localhost" in url` and sets `trust_env=not is_local`.
+   - Guarantees requests to `127.0.0.1:30020/` never route through WARP, while all Apple Music requests (m3u8, CDN cover art) route through the proxy.
+3. **Environment Variable Case-Insensitivity (`server/main.py`, `server/download_manager.py`):**
+   - Updated `_warp_keepalive_loop()` and `_probe_connectivity()` to check both uppercase and lowercase forms (`HTTPS_PROXY`, `https_proxy`, `ALL_PROXY`, `all_proxy`, `HTTP_PROXY`, `http_proxy`).
+4. **Dockerfile & Encoding Hardening (`Dockerfile`):**
+   - Added `PySocks` to `pip install` to support SOCKS5 proxies in `yt-dlp`.
+   - Added `ENV LANG=C.UTF-8 LC_ALL=C.UTF-8 PYTHONIOENCODING=utf-8` to ensure all metadata, tags, and filesystem paths handle unicode characters flawlessly.
+   - Updated Docker `HEALTHCHECK` command to use an empty `ProxyHandler({})` so internal health checks never fail due to proxy settings.
+5. **Production `docker-compose.yml` Architecture:**
+   - Used `network_mode: "service:warp-proxy"` so `gamdl-backend` shares the network stack with `warp-proxy`.
+   - Proxy URLs configured to `socks5://127.0.0.1:9091`. This is critical because the wrapper's emulated Android bionic environment cannot resolve Docker internal DNS names (e.g. `warp-proxy`), but connects instantly to `127.0.0.1:9091` with zero DNS lookups.
+   - Port `8000:8000` is exposed on `warp-proxy`.
+   - Added a 20-second polling loop in `start.sh` so that on container cold boots, `gamdl-backend` waits for `warp-proxy` port 9091 before launching the wrapper daemon.
+   - Verified on AWS EC2: all 4 wrapper ports (10020, 20020, 30020, 40020) reported OPEN and `/api/wrapper/status` returned `{"available": true}`. The image was saved and committed as `gamdl-gamdl-backend:with-new-wrapper`.
+
+---
+
+## Update: Layer 1 Hardening — Eliminate DNS Leaking via Remote DNS (socks5h://)
+
+### 1. Problem & Threat Model
+- **DNS Leakage with `socks5://`:** Under standard `socks5://`, DNS hostname resolution is performed by the local client or host resolver (AWS Route 53 `172.31.0.2` on EC2) before the TCP connection is handed off to the SOCKS proxy. Every queried domain (`amp-api.music.apple.com`, `play.itunes.apple.com`, `audio-ssl.itunes.apple.com`) leaves an audit trail directly associated with the AWS EC2 instance IP.
+- **Subprocess Downloader Egress Bypass:** Subprocess tools such as `yt-dlp` and `N_m3u8DL-RE` can bypass proxy environment variables or fail when encountering non-standard schemes if proxy arguments are not explicitly propagated to their CLI/engine options.
+
+### 2. Implemented Safeguards & Changes
+1. **Remote DNS Tunneling (`docker-compose.yml`):**
+   - Updated proxy environment variables (`HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, and their lowercase equivalents) from `socks5://127.0.0.1:9091` to `socks5h://127.0.0.1:9091`.
+   - The `socks5h://` scheme instructs HTTP clients (`httpx`, `curl`) and downloaders to pass the raw hostname across the SOCKS5 handshake (address type `0x03` - Domain Name), ensuring that all DNS lookups occur inside the Cloudflare WARP WireGuard tunnel via `1.1.1.1`.
+   - Added `NO_PROXY=localhost,127.0.0.1,::1` and `no_proxy=localhost,127.0.0.1,::1` as defense-in-depth loopback protection.
+2. **Explicit Downloader Subprocess Proxy Binding (`gamdl/downloader/downloader_base.py`):**
+   - **`yt-dlp` (`_download_ytdlp`):** Explicitly injects `proxy` into `ydl_opts` from environment variables, ensuring that `yt-dlp` + `PySocks` enforces remote DNS tunneling.
+   - **`N_m3u8DL-RE` (`download_nm3u8dlre`):** Appends `--custom-proxy` to the CLI arguments when a proxy is configured, with automatic normalization (`socks5h://` -> `socks5://`) to ensure full compatibility with .NET Core's URI parser without crashing.
+3. **Zero-Regression Guarantee:**
+   - Loopback immunity remains untouched: `check_wrapper_healthy()` and `gamdl/utils.py` continue to bypass proxies for `127.0.0.1`, preserving all wrapper communication (ports 10020, 20020, 30020, 40020) and Docker health checks.
+- **Files modified:** `docker-compose.yml`, `gamdl/downloader/downloader_base.py`, `latest_changes_reference.md`
+

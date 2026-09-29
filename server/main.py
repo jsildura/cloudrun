@@ -39,7 +39,14 @@ async def _warp_keepalive_loop() -> None:
     Without this, the tunnel dies after ~9 minutes of inactivity, causing
     all subsequent download requests to hang silently.
     """
-    proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("ALL_PROXY")
+    proxy_url = (
+        os.environ.get("HTTPS_PROXY")
+        or os.environ.get("https_proxy")
+        or os.environ.get("ALL_PROXY")
+        or os.environ.get("all_proxy")
+        or os.environ.get("HTTP_PROXY")
+        or os.environ.get("http_proxy")
+    )
     if not proxy_url:
         logger.info("WARP keepalive: no proxy configured, skipping")
         return

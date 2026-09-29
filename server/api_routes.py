@@ -721,15 +721,25 @@ def check_wrapper_healthy() -> bool:
     import urllib.error
 
     cfg = _get_current_config()
-    # 1. Test HTTP port (30020)
+    # 1. Test HTTP port (30020) - ensure environment proxies (WARP/SOCKS) NEVER intercept local check
+    http_healthy = False
     try:
         req = urllib.request.Request(cfg.wrapper_account_url, method="GET")
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            pass
+        no_proxy_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with no_proxy_opener.open(req, timeout=3) as resp:
+            http_healthy = True
     except urllib.error.HTTPError:
         # Any HTTP status code (200, 404, 400, etc.) means port 30020 is active and responding
-        pass
+        http_healthy = True
     except Exception:
+        # Fallback to direct TCP connection check for port 30020 in case urllib encounters handler quirks
+        try:
+            with socket.create_connection(("127.0.0.1", 30020), timeout=3):
+                http_healthy = True
+        except Exception:
+            http_healthy = False
+
+    if not http_healthy:
         return False
 
     # 2. Test TCP Decrypt port (10020)
