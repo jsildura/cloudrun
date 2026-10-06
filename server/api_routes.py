@@ -695,11 +695,19 @@ def do_wrapper_restart() -> dict:
     # 3. Start the wrapper in the background
     try:
         wrapper_dir = os.path.dirname(os.path.abspath(wrapper_bin))
+        rootfs_dev = os.path.join(wrapper_dir, "rootfs", "dev")
+        os.makedirs(rootfs_dev, exist_ok=True)
+        if sys.platform != "win32":
+            try:
+                subprocess.run(["mount", "--bind", "/dev", rootfs_dev], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+        log_file = open("/tmp/wrapper.log", "a") if sys.platform != "win32" else subprocess.DEVNULL
         subprocess.Popen(
             [wrapper_bin, "-H", "0.0.0.0"],
             cwd=wrapper_dir,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=log_file,
             start_new_session=True if sys.platform != "win32" else False,
         )
     except Exception as e:

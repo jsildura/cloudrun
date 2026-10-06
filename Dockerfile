@@ -48,7 +48,12 @@ WORKDIR /app
 
 # ── Copy and prepare Wrapper ─────────────────────────────────────────────────
 COPY Wrapper/ Wrapper/
-RUN chmod +x Wrapper/wrapper 2>/dev/null || true
+RUN chmod +x Wrapper/wrapper 2>/dev/null || true && \
+    mkdir -p /app/Wrapper/rootfs/dev && \
+    (mknod -m 666 /app/Wrapper/rootfs/dev/urandom c 1 9 2>/dev/null || true) && \
+    (mknod -m 666 /app/Wrapper/rootfs/dev/random c 1 8 2>/dev/null || true) && \
+    (mknod -m 666 /app/Wrapper/rootfs/dev/null c 1 3 2>/dev/null || true) && \
+    (mknod -m 666 /app/Wrapper/rootfs/dev/zero c 1 5 2>/dev/null || true)
 
 # ── Install gamdl package ────────────────────────────────────────────────────
 COPY pyproject.toml .
