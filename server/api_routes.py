@@ -601,16 +601,94 @@ async def run_periodic_cleanup() -> None:
 # ── Config ────────────────────────────────────────────────────────────────────
 
 
+def _get_container_memory_stats() -> tuple[int, int, float]:
+    """Calculate container-level RAM usage and limit.
+    Avoids reporting the shared 32GB host node on Render/PaaS by inspecting
+    cgroups and process tree RSS.
+    """
+    proc_rss = 0
+    try:
+        for p in psutil.process_iter(["memory_info"]):
+            try:
+                mi = p.info.get("memory_info")
+                if mi and hasattr(mi, "rss"):
+                    proc_rss += mi.rss
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+    except Exception:
+        pass
+
+    cgroup_usage: int | None = None
+    cgroup_limit: int | None = None
+
+    # cgroup v2
+    try:
+        if os.path.isfile("/sys/fs/cgroup/memory.current"):
+            with open("/sys/fs/cgroup/memory.current", "r") as f:
+                cgroup_usage = int(f.read().strip())
+        if os.path.isfile("/sys/fs/cgroup/memory.max"):
+            with open("/sys/fs/cgroup/memory.max", "r") as f:
+                val = f.read().strip()
+                if val != "max":
+                    cgroup_limit = int(val)
+    except Exception:
+        pass
+
+    # cgroup v1
+    if cgroup_usage is None:
+        try:
+            if os.path.isfile("/sys/fs/cgroup/memory/memory.usage_in_bytes"):
+                with open("/sys/fs/cgroup/memory/memory.usage_in_bytes", "r") as f:
+                    cgroup_usage = int(f.read().strip())
+            if os.path.isfile("/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+                with open("/sys/fs/cgroup/memory/memory.limit_in_bytes", "r") as f:
+                    val = int(f.read().strip())
+                    if val < (1 << 50):  # ignore unlimited (~9e18)
+                        cgroup_limit = val
+        except Exception:
+            pass
+
+    vm = psutil.virtual_memory()
+
+    is_render = (
+        os.environ.get("RENDER") == "true"
+        or "onrender.com" in os.environ.get("RENDER_EXTERNAL_HOSTNAME", "")
+        or os.environ.get("RENDER_INSTANCE_ID") is not None
+    )
+
+    if cgroup_limit and cgroup_limit < vm.total:
+        total_bytes = cgroup_limit
+    elif is_render:
+        total_bytes = 512 * 1024 * 1024  # Render Free container allocation
+    elif vm.total <= 4 * 1024 * 1024 * 1024:
+        total_bytes = vm.total
+    else:
+        total_bytes = cgroup_limit or vm.total
+
+    if proc_rss > 0:
+        used_bytes = proc_rss
+    elif cgroup_usage is not None:
+        used_bytes = min(cgroup_usage, total_bytes)
+    else:
+        used_bytes = vm.used
+
+    used_mb = max(1, round(used_bytes / 1048576))
+    total_mb = max(used_mb, round(total_bytes / 1048576))
+    percent = round((used_mb / total_mb) * 100, 1)
+
+    return used_mb, total_mb, percent
+
+
 @router.get("/system/stats")
 async def system_stats(request: Request) -> dict:
-    """Return host CPU, RAM, and Swap usage. No auth required."""
-    vm = psutil.virtual_memory()
+    """Return container CPU, RAM, and Swap usage. No auth required."""
+    used_mb, total_mb, percent = _get_container_memory_stats()
     sw = psutil.swap_memory()
     return {
         "cpu_percent": psutil.cpu_percent(interval=0),
-        "ram_used_mb": round(vm.used / 1048576),
-        "ram_total_mb": round(vm.total / 1048576),
-        "ram_percent": vm.percent,
+        "ram_used_mb": used_mb,
+        "ram_total_mb": total_mb,
+        "ram_percent": percent,
         "swap_used_mb": round(sw.used / 1048576),
         "swap_total_mb": round(sw.total / 1048576),
         "swap_percent": sw.percent,

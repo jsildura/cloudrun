@@ -885,3 +885,15 @@ Migrated backend Docker infrastructure following the cancellation of the AWS EC2
   - Updated `_wrapper_watchdog_loop()` in `server/main.py` to recognize either `wrapper` or `rootfs/system/bin/main`.
 - **Files modified:** `Dockerfile`, `start.sh`, `server/api_routes.py`, `server/main.py`, `latest_changes_reference.md`
 
+### 7. Fix: Container-Aware RAM Reporting & Swap Clean-up (`server/api_routes.py`, `web/js/app.js`, `web/index.html`)
+- **Problem:**
+  - The status bar in the web UI displayed `RAM: 20258/31387 MB | SWAP: 0/0 MB`.
+  - Python's `psutil.virtual_memory()` reads `/proc/meminfo`, which in container environments reports the physical host machine's total memory (a shared 32GB node with ~20GB consumed by other customer containers), creating false alarms.
+  - Furthermore, cloud container runtimes disable swap entirely at the host kernel level, leading to an awkward and confusing `SWAP: 0/0 MB` display.
+- **Solution:**
+  - Created `_get_container_memory_stats()` in `server/api_routes.py` that reads container cgroups (cgroup v2 `memory.current`/`memory.max` and cgroup v1) and calculates active process tree RSS.
+  - Automatically identifies container limits (512 MB on Render Free) so the UI displays the container's true memory usage (e.g., `RAM: ~105/512 MB (21%)`).
+  - Updated `web/js/app.js` to dynamically hide the `SWAP` element and divider when `swap_total_mb <= 0`, cleanly removing `SWAP: 0/0 MB`.
+- **Files modified:** `server/api_routes.py`, `web/js/app.js`, `web/index.html`, `latest_changes_reference.md`
+
+

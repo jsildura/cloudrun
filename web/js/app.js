@@ -2545,12 +2545,21 @@
             if (!s) return;
 
             statCpu.textContent = `CPU: ${Math.round(s.cpu_percent)}%`;
-            statRam.textContent = `RAM: ${s.ram_used_mb}/${s.ram_total_mb} MB`;
-            statSwap.textContent = `SWAP: ${s.swap_used_mb}/${s.swap_total_mb} MB`;
+            statRam.textContent = `RAM: ${s.ram_used_mb}/${s.ram_total_mb} MB (${Math.round(s.ram_percent)}%)`;
+
+            const statSwapDivider = $('#stat-swap-divider');
+            if (!s.swap_total_mb || s.swap_total_mb <= 0) {
+                statSwap.style.display = 'none';
+                if (statSwapDivider) statSwapDivider.style.display = 'none';
+            } else {
+                statSwap.style.display = '';
+                if (statSwapDivider) statSwapDivider.style.display = '';
+                statSwap.textContent = `SWAP: ${s.swap_used_mb}/${s.swap_total_mb} MB`;
+                applyStatClass(statSwap, s.swap_percent);
+            }
 
             applyStatClass(statCpu, s.cpu_percent);
             applyStatClass(statRam, s.ram_percent);
-            applyStatClass(statSwap, s.swap_percent);
         } catch (e) {
             // Silently ignore failures during offline / restart
         }
