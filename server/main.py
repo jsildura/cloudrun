@@ -101,10 +101,11 @@ async def _wrapper_watchdog_loop() -> None:
     # Wait 30 seconds after server startup before running health checks
     await asyncio.sleep(30)
 
-    # Check if wrapper binary exists before starting watchdog
+    # Check if wrapper or rootfs binary exists before starting watchdog
     wrapper_bin = "/app/Wrapper/wrapper"
-    if not os.path.isfile(wrapper_bin):
-        logger.warning("Wrapper binary not found at %s — watchdog disabled", wrapper_bin)
+    rootfs_main = "/app/Wrapper/rootfs/system/bin/main"
+    if not os.path.isfile(wrapper_bin) and not os.path.isfile(rootfs_main):
+        logger.warning("Wrapper binaries not found — watchdog disabled")
         return
 
     consecutive_failures = 0

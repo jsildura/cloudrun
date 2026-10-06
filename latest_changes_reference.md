@@ -868,3 +868,20 @@ Migrated backend Docker infrastructure following the cancellation of the AWS EC2
   - In `start.sh` and `server/api_routes.py`: Added automated runtime `mount --bind /dev /app/Wrapper/rootfs/dev` before starting the daemon.
   - Replaced PID checking with an active socket readiness polling loop on port 30020 (`wrapper_account_url`), outputting daemon logs to `/tmp/wrapper.log` on failure.
 - **Files modified:** `Dockerfile`, `start.sh`, `server/api_routes.py`, `Wrapper/`, `latest_changes_reference.md`
+
+### 6. Fix: Unprivileged Container Compatibility for Wrapper via PRoot (`Dockerfile`, `start.sh`, `api_routes.py`, `main.py`)
+- **Root Cause of Render / PaaS Failure:**
+  - Render and similar cloud container hosts run unprivileged Docker containers without `CAP_SYS_ADMIN` or `CAP_MKNOD`.
+  - At build time, `mknod` inside the container image fails with `EPERM` (Operation not permitted).
+  - At runtime, `mount --bind /dev /app/Wrapper/rootfs/dev` also fails with `EPERM`.
+  - When `/app/Wrapper/wrapper` chroots into `rootfs` and executes `/system/bin/main`, Android Bionic libc checks `/dev/urandom`. Because Bionic strictly requires `S_ISCHR(st.st_mode)` (a genuine character device rather than a regular file or broken symlink), it immediately terminates via `tgkill(SIGKILL)`.
+  - When users clicked "Restart Wrapper" in the Web UI, `api_routes.do_wrapper_restart` failed for the same reason, producing the toast *"Wrapper started but taking longer to initialize"*.
+- **Solution (PRoot Userspace Emulation):**
+  - Added `proot` to Debian system packages in `Dockerfile`.
+  - In `start.sh` and `server/api_routes.py`, detected `proot` and launched the Android runtime using:
+    `PROOT_NO_SECCOMP=1 proot -b /dev:/dev -b /proc:/proc -r /app/Wrapper/rootfs -w / /system/bin/main -H 0.0.0.0`
+  - PRoot intercepts path lookups and chroot syscalls purely via userspace `ptrace` without requiring kernel `CAP_SYS_ADMIN` or `mount` privileges, cleanly exposing the host's `/dev/urandom` character device into the Android rootfs.
+  - Updated `do_wrapper_restart()` process termination to scan and gracefully stop `proot` and `main` child processes in addition to `wrapper`.
+  - Updated `_wrapper_watchdog_loop()` in `server/main.py` to recognize either `wrapper` or `rootfs/system/bin/main`.
+- **Files modified:** `Dockerfile`, `start.sh`, `server/api_routes.py`, `server/main.py`, `latest_changes_reference.md`
+

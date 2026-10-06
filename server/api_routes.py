@@ -641,9 +641,12 @@ def do_wrapper_restart() -> dict:
                 cmdline = [c.lower() for c in (p.info.get("cmdline") or [])]
 
                 is_wrapper = (
-                    name in ("wrapper", "wrapper.exe")
-                    or (exe and os.path.basename(exe) in ("wrapper", "wrapper.exe"))
-                    or any("wrapper" in c and ("./wrapper" in c or "/wrapper" in c or "\\wrapper" in c) for c in cmdline)
+                    name in ("wrapper", "wrapper.exe", "proot", "main")
+                    or (exe and os.path.basename(exe) in ("wrapper", "wrapper.exe", "proot", "main"))
+                    or any(
+                        "wrapper" in c or "proot" in c or "rootfs" in c
+                        for c in cmdline
+                    )
                 )
 
                 if is_wrapper:
@@ -656,12 +659,16 @@ def do_wrapper_restart() -> dict:
 
         # Wait up to 1 second for graceful termination, then escalate if needed
         time.sleep(1)
-        for p in psutil.process_iter(["pid", "name", "exe"]):
+        for p in psutil.process_iter(["pid", "name", "exe", "cmdline"]):
             try:
                 if p.pid == current_pid:
                     continue
                 name = (p.info.get("name") or "").lower()
-                if name in ("wrapper", "wrapper.exe"):
+                cmdline = [c.lower() for c in (p.info.get("cmdline") or [])]
+                if (
+                    name in ("wrapper", "wrapper.exe", "proot", "main")
+                    or any("wrapper" in c or "proot" in c or "rootfs" in c for c in cmdline)
+                ):
                     try:
                         p.kill()
                     except Exception:
@@ -683,38 +690,68 @@ def do_wrapper_restart() -> dict:
 
     time.sleep(1)
 
-    # 2. Check if the wrapper binary exists
-    if not os.path.isfile(wrapper_bin):
-        return {"success": False, "message": "Wrapper binary not found"}
+    import shutil
 
-    try:
-        os.chmod(wrapper_bin, 0o755)
-    except Exception:
-        pass
+    wrapper_dir = os.path.dirname(os.path.abspath(wrapper_bin))
+    rootfs_main = os.path.join(wrapper_dir, "rootfs", "system", "bin", "main")
+    rootfs_dev = os.path.join(wrapper_dir, "rootfs", "dev")
+    os.makedirs(rootfs_dev, exist_ok=True)
+    os.makedirs(os.path.join(wrapper_dir, "rootfs", "proc"), exist_ok=True)
+    os.makedirs(os.path.join(wrapper_dir, "rootfs", "sys"), exist_ok=True)
+
+    has_proot = shutil.which("proot") is not None and os.path.isfile(rootfs_main)
+    has_wrapper = os.path.isfile(wrapper_bin)
+
+    # 2. Check if the wrapper binaries exist
+    if not has_proot and not has_wrapper:
+        return {"success": False, "message": "Wrapper binary not found"}
 
     # 3. Start the wrapper in the background
     try:
-        wrapper_dir = os.path.dirname(os.path.abspath(wrapper_bin))
-        rootfs_dev = os.path.join(wrapper_dir, "rootfs", "dev")
-        os.makedirs(rootfs_dev, exist_ok=True)
-        if sys.platform != "win32":
+        log_file = open("/tmp/wrapper.log", "a") if sys.platform != "win32" else subprocess.DEVNULL
+        env = os.environ.copy()
+        env["PROOT_NO_SECCOMP"] = "1"
+
+        if has_proot:
             try:
-                subprocess.run(["mount", "--bind", "/dev", rootfs_dev], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                os.chmod(rootfs_main, 0o755)
+                os.chmod(os.path.join(wrapper_dir, "rootfs", "system", "bin", "linker64"), 0o755)
             except Exception:
                 pass
-        log_file = open("/tmp/wrapper.log", "a") if sys.platform != "win32" else subprocess.DEVNULL
+            cmd = [
+                "proot",
+                "-b", "/dev:/dev",
+                "-b", "/proc:/proc",
+                "-r", os.path.join(wrapper_dir, "rootfs"),
+                "-w", "/",
+                "/system/bin/main",
+                "-H", "0.0.0.0",
+            ]
+        else:
+            try:
+                os.chmod(wrapper_bin, 0o755)
+            except Exception:
+                pass
+            if sys.platform != "win32":
+                try:
+                    subprocess.run(["mount", "--bind", "/dev", rootfs_dev], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception:
+                    pass
+            cmd = [wrapper_bin, "-H", "0.0.0.0"]
+
         subprocess.Popen(
-            [wrapper_bin, "-H", "0.0.0.0"],
+            cmd,
             cwd=wrapper_dir,
             stdout=log_file,
             stderr=log_file,
+            env=env,
             start_new_session=True if sys.platform != "win32" else False,
         )
     except Exception as e:
         return {"success": False, "message": f"Failed to start: {e}"}
 
-    # 4. Poll for wrapper readiness with a retry loop (up to 10 seconds)
-    for _ in range(20):
+    # 4. Poll for wrapper readiness with a retry loop (up to 15 seconds)
+    for _ in range(30):
         time.sleep(0.5)
         if check_wrapper_healthy():
             return {"success": True, "message": "Wrapper restarted successfully"}

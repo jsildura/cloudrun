@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     gnupg \
+    proot \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://dist.gpac.io/gpac/linux/gpg.asc -o /etc/apt/keyrings/gpac.asc \
     && chmod a+r /etc/apt/keyrings/gpac.asc \
@@ -49,11 +50,9 @@ WORKDIR /app
 # ── Copy and prepare Wrapper ─────────────────────────────────────────────────
 COPY Wrapper/ Wrapper/
 RUN chmod +x Wrapper/wrapper 2>/dev/null || true && \
-    mkdir -p /app/Wrapper/rootfs/dev && \
-    (mknod -m 666 /app/Wrapper/rootfs/dev/urandom c 1 9 2>/dev/null || true) && \
-    (mknod -m 666 /app/Wrapper/rootfs/dev/random c 1 8 2>/dev/null || true) && \
-    (mknod -m 666 /app/Wrapper/rootfs/dev/null c 1 3 2>/dev/null || true) && \
-    (mknod -m 666 /app/Wrapper/rootfs/dev/zero c 1 5 2>/dev/null || true)
+    chmod +x Wrapper/rootfs/system/bin/main 2>/dev/null || true && \
+    chmod +x Wrapper/rootfs/system/bin/linker64 2>/dev/null || true && \
+    mkdir -p /app/Wrapper/rootfs/dev /app/Wrapper/rootfs/proc /app/Wrapper/rootfs/sys
 
 # ── Install gamdl package ────────────────────────────────────────────────────
 COPY pyproject.toml .
