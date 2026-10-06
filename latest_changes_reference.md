@@ -859,4 +859,12 @@ Migrated backend Docker infrastructure following the cancellation of the AWS EC2
 
 ### 4. Configuration: Docker SDK Metadata (`README.md`)
 - Restored standard Hugging Face / Docker metadata frontmatter (`sdk: docker`, `app_port: 8000`) in `README.md`.
-- **Files modified:** `README.md`, `wrangler.jsonc`, `latest_changes_reference.md`
+
+### 5. Fix: Wrapper Sandbox Initialization for Experimental Codecs (`Dockerfile`, `start.sh`, `api_routes.py`)
+- **Root Cause of Wrapper Failure:** The `wrapper` binary uses `chroot("./rootfs")` to sandbox its Android runtime. Inside the chroot, the runtime attempted to open `/dev/urandom`. Because `rootfs/dev` was an empty directory, the syscall failed (`ENOENT`), causing the process to self-terminate with `SIGKILL`.
+- **Readiness Detection Bug:** `start.sh` previously relied on `kill -0 "$WRAPPER_PID"` to verify health after 2 seconds. Because `wrapper` forks child processes (`main`) and the parent exits, this produced false-negative failure reports.
+- **Fixes Applied:**
+  - In `Dockerfile`: Created character device nodes (`/dev/urandom`, `/dev/random`, `/dev/null`, `/dev/zero`) inside `/app/Wrapper/rootfs/dev` during image build.
+  - In `start.sh` and `server/api_routes.py`: Added automated runtime `mount --bind /dev /app/Wrapper/rootfs/dev` before starting the daemon.
+  - Replaced PID checking with an active socket readiness polling loop on port 30020 (`wrapper_account_url`), outputting daemon logs to `/tmp/wrapper.log` on failure.
+- **Files modified:** `Dockerfile`, `start.sh`, `server/api_routes.py`, `Wrapper/`, `latest_changes_reference.md`
