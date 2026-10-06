@@ -833,6 +833,30 @@ Enabling outbound proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL
    - Applied to both primary track download loop (`_process_job_inner`) and failed track retries (`retry_failed_tracks`).
 - **Files modified:** `gamdl/utils.py`, `server/download_manager.py`, `latest_changes_reference.md`
 
+---
 
+## Changes Made (October 6, 2026)
 
+### 1. Backend Migration from AWS EC2 to Render Free Container
+Migrated backend Docker infrastructure following the cancellation of the AWS EC2 instance (`52.62.161.146`) and removal of the `amdlxd.duckdns.org` reverse proxy.
+- **Root Cause of HTTP 522:** Cloudflare Pages (`amdlxd.pages.dev`) proxied all `/api/*` traffic via `functions/api/[[path]].js` to `amdlxd.duckdns.org`. Because the EC2 instance was decommissioned, origin TCP connections timed out, producing Cloudflare 522 errors across all endpoints (`/api/auth/status`, `/api/system/stats`, `/api/downloads`, `/api/events`).
+- **Render Deployment:** Deployed the root `Dockerfile` to Render's Free Web Service tier (`amdlxd.onrender.com`) running Python 3.12, FFmpeg, and Bento4 `mp4decrypt` on port 10000 with a `/health` readiness check.
+- **Cloudflare Pages Routing:** Updated `API_URL` environment variable in Cloudflare Pages dashboard and `wrangler.jsonc` to point directly to `https://amdlxd.onrender.com`.
+- **Anti-Sleep Keepalive:** Configured UptimeRobot monitor pinging `https://amdlxd.onrender.com/health` every 10 minutes, keeping the container active 24/7 within Render's 750 free monthly hours.
 
+### 2. Fix: Content Security Policy (CSP) for Google APIs & Firebase Auth
+- **Problem:** Browser blocked `https://apis.google.com/js/api.js` due to missing CSP directive in `web/_headers`, throwing:
+  `Loading the script 'https://apis.google.com/js/api.js' violates the following Content Security Policy directive: script-src 'self' ...`
+- **Solution:** 
+  - Added `https://apis.google.com` to `script-src` in `web/_headers`.
+  - Added `https://apis.google.com https://*.firebaseapp.com` to `frame-src` in `web/_headers`.
+- **File modified:** `web/_headers`
+
+### 3. Fix: CORS Support for Cloudflare Pages (`server/main.py`)
+- Added `https://amdlxd.pages.dev` to the explicit `origins` allowlist.
+- Updated `allow_origin_regex` from `gamdl\.pages\.dev` to `r"^https://([a-zA-Z0-9-]+\.)*pages\.dev$"` to cover all Cloudflare Pages domains and preview deployments.
+- **File modified:** `server/main.py`
+
+### 4. Configuration: Docker SDK Metadata (`README.md`)
+- Restored standard Hugging Face / Docker metadata frontmatter (`sdk: docker`, `app_port: 8000`) in `README.md`.
+- **Files modified:** `README.md`, `wrangler.jsonc`, `latest_changes_reference.md`
