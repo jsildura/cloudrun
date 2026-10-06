@@ -240,6 +240,7 @@ origins = [
     "http://localhost:3000",        # Local dev (alt port)
     "http://127.0.0.1:8080",       # Local dev
     "https://gamdl.pages.dev",      # Production Cloudflare Pages default
+    "https://amdlxd.pages.dev",     # Production Cloudflare Pages
     "https://amdlxd.stormygenesis.workers.dev",  # Cloudflare Workers
 ]
 
@@ -252,7 +253,7 @@ if os.environ.get("CORS_ORIGINS"):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"^https://([a-zA-Z0-9-]+\.)*gamdl\.pages\.dev$|^https://([a-zA-Z0-9-]+\.)*stormygenesis\.workers\.dev$",
+    allow_origin_regex=r"^https://([a-zA-Z0-9-]+\.)*pages\.dev$|^https://([a-zA-Z0-9-]+\.)*stormygenesis\.workers\.dev$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
