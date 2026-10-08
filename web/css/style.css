@@ -1548,6 +1548,9 @@ a:focus-visible {
 .preview-artwork-wrapper {
     flex-shrink: 0;
     display: grid;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
 }
 
 .preview-artwork-wrapper>* {
@@ -1561,6 +1564,10 @@ a:focus-visible {
     object-fit: cover;
     flex-shrink: 0;
     box-shadow: var(--shadow-md);
+}
+
+.preview-artwork-video {
+    pointer-events: none;
 }
 
 .preview-meta {
@@ -1593,6 +1600,7 @@ a:focus-visible {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-wrap: balance;
 }
 
 .preview-genre {
@@ -1670,6 +1678,266 @@ a:focus-visible {
     border-radius: 999px;
 }
 
+/* Preview Description / Editorial Notes */
+.preview-description-wrap {
+    margin-top: 10px;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    letter-spacing: -0.01em;
+    position: relative;
+}
+
+.preview-description-text {
+    margin: 0;
+    color: var(--text-secondary);
+    white-space: normal;
+    word-break: break-word;
+    font-weight: 400;
+}
+
+.preview-description-text i,
+.preview-description-text em {
+    font-style: italic;
+    color: var(--text-primary);
+}
+
+.preview-description-text b,
+.preview-description-text strong {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.preview-description-text.clamped {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.preview-description-more {
+    display: inline-block;
+    background: none;
+    border: none;
+    padding: 0;
+    margin-top: 5px;
+    font-family: var(--font);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: color var(--transition-fast), transform var(--transition-fast);
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+}
+
+.preview-description-more:hover {
+    color: var(--text-primary);
+}
+
+.preview-description-more:active {
+    transform: scale(0.96);
+}
+
+/* ── Description Popup Modal (Apple Music Frosted Glass Style) ── */
+#modal-description {
+    background: rgba(0, 0, 0, 0.54);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+.modal-description-card {
+    max-width: 630px;
+    width: 100%;
+    max-height: 84dvh;
+    min-height: 320px;
+    /* Authentic Apple Music translucent glass material */
+    background: rgba(28, 28, 32, 0.76);
+    backdrop-filter: blur(50px) saturate(210%) brightness(1.02);
+    -webkit-backdrop-filter: blur(50px) saturate(210%) brightness(1.02);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 22px;
+    padding: 26px 28px 28px;
+    /* Layered multi-depth shadow with specular rim lighting */
+    box-shadow:
+        0 36px 80px -12px rgba(0, 0, 0, 0.8),
+        0 14px 28px -6px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    animation: appleModalPop 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@supports not (backdrop-filter: blur(10px)) {
+    .modal-description-card {
+        background: #1c1c20;
+    }
+}
+
+.modal-desc-close {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 50%;
+    color: rgba(255, 255, 255, 0.72);
+    cursor: pointer;
+    transition: background 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+        border-color 0.2s ease,
+        color 0.2s ease,
+        transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
+    margin-bottom: 22px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.modal-desc-close:hover {
+    background: rgba(255, 255, 255, 0.22);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+    transform: scale(1.06);
+}
+
+.modal-desc-close:active {
+    background: rgba(255, 255, 255, 0.16);
+    transform: scale(0.94);
+}
+
+.modal-desc-close:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.55);
+    outline-offset: 2px;
+}
+
+.modal-desc-close svg {
+    pointer-events: none;
+    display: block;
+}
+
+.modal-desc-header {
+    flex-shrink: 0;
+    margin-bottom: 22px;
+}
+
+.modal-desc-title {
+    font-size: 1.32rem;
+    font-weight: 700;
+    color: #ffffff;
+    line-height: 1.22;
+    letter-spacing: -0.028em;
+    margin: 0 0 6px 0;
+    word-break: break-word;
+    text-rendering: optimizeLegibility;
+}
+
+.modal-desc-subtitle {
+    font-size: 0.84rem;
+    font-weight: 400;
+    color: rgba(235, 235, 245, 0.62);
+    letter-spacing: -0.012em;
+    line-height: 1.35;
+}
+
+.modal-desc-body {
+    flex: 1;
+    overflow-y: auto;
+    font-size: 0.86rem;
+    line-height: 1.68;
+    color: rgba(255, 255, 255, 0.9);
+    letter-spacing: -0.008em;
+    padding-right: 14px;
+    padding-bottom: 16px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+.modal-desc-body p {
+    margin: 0 0 1.4em 0;
+}
+
+.modal-desc-body p:last-child {
+    margin-bottom: 0;
+}
+
+.modal-desc-body i,
+.modal-desc-body em {
+    font-style: italic;
+    color: #ffffff;
+}
+
+.modal-desc-body b,
+.modal-desc-body strong {
+    font-weight: 600;
+    color: #ffffff;
+}
+
+/* Cupertino Slim Scrollbar */
+.modal-desc-body::-webkit-scrollbar {
+    width: 5px;
+}
+
+.modal-desc-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.modal-desc-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.22);
+    border-radius: 999px;
+    transition: background 0.2s ease;
+}
+
+.modal-desc-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.44);
+}
+
+/* Subtle bottom scroll fade */
+.modal-desc-fade {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 28px;
+    height: 48px;
+    background: linear-gradient(to bottom,
+            rgba(26, 26, 30, 0) 0%,
+            rgba(26, 26, 30, 0.72) 65%,
+            rgba(24, 24, 28, 0.95) 100%);
+    pointer-events: none;
+    border-bottom-left-radius: 22px;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+/* Text selection inside modal */
+.modal-description-card ::selection {
+    background: rgba(255, 55, 95, 0.35);
+    color: #ffffff;
+}
+
+@keyframes appleModalPop {
+    from {
+        opacity: 0;
+        transform: scale(0.96) translateY(12px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
 .preview-save-artwork-btn {
     place-self: center;
     width: 44px;
@@ -1677,28 +1945,45 @@ a:focus-visible {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.35);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 50%;
     color: #fff;
     cursor: pointer;
     z-index: 15;
     opacity: 0;
     pointer-events: none;
-    transition: all var(--transition-fast);
-    box-shadow: var(--shadow-md);
+    transform: scale(0.92);
+    transition: opacity 0.28s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s ease;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
-.preview-artwork-wrapper:hover .preview-save-artwork-btn {
+.preview-save-artwork-btn svg {
+    pointer-events: none;
+    display: block;
+}
+
+/* Hover reveal for devices with pointer/mouse */
+@media (hover: hover) and (pointer: fine) {
+    .preview-artwork-wrapper:hover .preview-save-artwork-btn {
+        opacity: 1;
+        pointer-events: auto;
+        transform: scale(1);
+    }
+}
+
+/* Explicit visibility state toggled via touch or click */
+.preview-save-artwork-btn.visible {
     opacity: 1;
     pointer-events: auto;
+    transform: scale(1);
 }
 
 .preview-save-artwork-btn:hover {
-    background: rgba(0, 0, 0, 0.55);
-    transform: scale(1.1);
+    background: rgba(0, 0, 0, 0.65);
+    transform: scale(1.08);
 }
 
 .preview-save-artwork-btn:active {
@@ -1706,8 +1991,8 @@ a:focus-visible {
 }
 
 .preview-download-btn {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2140,6 +2425,311 @@ a:focus-visible {
     line-height: 1.6;
 }
 
+/* ── Skeleton Loading System ──────────────────────────────────────────────── */
+@keyframes skeletonShimmer {
+    0% {
+        background-position: -200% 0;
+    }
+
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+:root {
+    --skeleton-shimmer: linear-gradient(90deg,
+            rgba(255, 255, 255, 0.04) 25%,
+            rgba(255, 255, 255, 0.12) 50%,
+            rgba(255, 255, 255, 0.04) 75%);
+}
+
+/* 1. Artwork Wrapper Skeleton */
+div.preview-artwork-wrapper.skeleton,
+.preview-card.is-skeleton div.preview-artwork-wrapper {
+    width: 130px;
+    height: 130px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+    position: relative;
+    pointer-events: none;
+    cursor: default;
+}
+
+div.preview-artwork-wrapper.skeleton>*,
+.preview-card.is-skeleton div.preview-artwork-wrapper>* {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* 2. Title Skeleton */
+h2.preview-title.skeleton,
+.preview-card.is-skeleton h2.preview-title {
+    position: relative;
+    height: 1.35rem;
+    width: 75%;
+    max-width: 320px;
+    min-height: 20px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+    border-radius: 6px;
+    color: transparent !important;
+    user-select: none;
+    pointer-events: none;
+    margin: 4px 0 6px 0;
+}
+
+/* 3. Artist Skeleton */
+span.preview-artist.skeleton,
+.preview-card.is-skeleton span.preview-artist {
+    position: relative;
+    display: block;
+    height: 1rem;
+    width: 50%;
+    max-width: 200px;
+    min-height: 15px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+    border-radius: 5px;
+    color: transparent !important;
+    user-select: none;
+    pointer-events: none;
+    margin: 4px 0 2px 0;
+}
+
+/* 4. Genre Skeleton */
+span.preview-genre.skeleton,
+.preview-card.is-skeleton span.preview-genre {
+    position: relative;
+    display: block;
+    height: 0.82rem;
+    width: 35%;
+    max-width: 140px;
+    min-height: 12px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+    border-radius: 4px;
+    color: transparent !important;
+    user-select: none;
+    pointer-events: none;
+    margin-top: 4px;
+}
+
+/* 5. Badges Skeleton */
+div.preview-badges.skeleton,
+.preview-card.is-skeleton div.preview-badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    pointer-events: none;
+    user-select: none;
+}
+
+div.preview-badges.skeleton>*,
+.preview-card.is-skeleton div.preview-badges>* {
+    display: none !important;
+}
+
+div.preview-badges.skeleton::before,
+.preview-card.is-skeleton div.preview-badges::before,
+div.preview-badges.skeleton::after,
+.preview-card.is-skeleton div.preview-badges::after {
+    content: '';
+    display: inline-block;
+    height: 18px;
+    border-radius: 999px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+}
+
+div.preview-badges.skeleton::before,
+.preview-card.is-skeleton div.preview-badges::before {
+    width: 60px;
+}
+
+div.preview-badges.skeleton::after,
+.preview-card.is-skeleton div.preview-badges::after {
+    width: 44px;
+}
+
+/* 6. Track Items Skeleton */
+div.preview-track-item.skeleton,
+div.preview-track-item.has-preview.skeleton,
+.preview-card.is-skeleton div.preview-track-item {
+    cursor: default !important;
+    pointer-events: none;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 15px;
+}
+
+.preview-track-item.skeleton .skeleton-track-num {
+    width: 22px;
+    height: 20px;
+    border-radius: 4px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+.preview-track-item.skeleton .skeleton-track-title {
+    height: 0.88rem;
+    width: 62%;
+    max-width: 260px;
+    min-height: 14px;
+    border-radius: 4px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+    margin-bottom: 6px;
+}
+
+.preview-track-item.skeleton .skeleton-track-artist {
+    height: 0.72rem;
+    width: 38%;
+    max-width: 160px;
+    min-height: 11px;
+    border-radius: 4px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+}
+
+.preview-track-item.skeleton .skeleton-track-duration {
+    height: 0.75rem;
+    width: 36px;
+    min-height: 12px;
+    border-radius: 4px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+/* 7. Footer Skeleton */
+div.preview-footer.skeleton,
+.preview-card.is-skeleton div.preview-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 14px 20px;
+    pointer-events: none;
+    user-select: none;
+    border-top: 1px solid var(--border);
+}
+
+div.preview-footer.skeleton::before,
+.preview-card.is-skeleton div.preview-footer::before {
+    content: '';
+    display: block;
+    height: 0.8rem;
+    width: 48%;
+    max-width: 240px;
+    border-radius: 4px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+}
+
+div.preview-footer.skeleton::after,
+.preview-card.is-skeleton div.preview-footer::after {
+    content: '';
+    display: block;
+    height: 0.72rem;
+    width: 30%;
+    max-width: 150px;
+    border-radius: 4px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+}
+
+/* 8. History Item Skeleton */
+div.history-item.skeleton {
+    pointer-events: none;
+    user-select: none;
+    cursor: default;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+div.history-item.skeleton .skeleton-history-title {
+    display: block;
+    height: 0.88rem;
+    width: 65%;
+    max-width: 220px;
+    min-height: 14px;
+    border-radius: 4px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+    margin-bottom: 6px;
+}
+
+div.history-item.skeleton .skeleton-history-artist {
+    display: block;
+    height: 0.74rem;
+    width: 42%;
+    max-width: 140px;
+    min-height: 12px;
+    border-radius: 4px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+    margin-bottom: 7px;
+}
+
+div.history-item.skeleton .skeleton-history-badges {
+    display: flex;
+    gap: 6px;
+}
+
+div.history-item.skeleton .skeleton-history-badge {
+    height: 16px;
+    width: 48px;
+    border-radius: 999px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+}
+
+div.history-item.skeleton .skeleton-history-date {
+    display: block;
+    height: 0.72rem;
+    width: 52px;
+    min-height: 12px;
+    border-radius: 4px;
+    background: var(--skeleton-shimmer);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+}
+
+/* 9. Smooth Content Reveal After Skeleton */
+.preview-card:not(.is-skeleton) .preview-artwork-wrapper,
+.preview-card:not(.is-skeleton) .preview-meta,
+.preview-card:not(.is-skeleton) .preview-tracks,
+.preview-card:not(.is-skeleton) .preview-footer {
+    animation: fadeIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 /* ── Mobile Preview Overrides ────────────────────────────────────────────── */
 @media (max-width: 480px) {
     .preview-header {
@@ -2181,6 +2771,13 @@ a:focus-visible {
         margin-top: 8px;
     }
 
+    .preview-description-wrap {
+        text-align: left;
+        width: 100%;
+        margin-top: 10px;
+        padding: 0 4px;
+    }
+
     .preview-title {
         font-size: 1.2rem;
         text-align: center;
@@ -2189,6 +2786,7 @@ a:focus-visible {
     .preview-artist {
         font-size: 1rem;
         margin-bottom: 4px;
+        text-wrap: balance;
     }
 
     .preview-download-btn {
@@ -2198,8 +2796,8 @@ a:focus-visible {
         right: 16px;
         transform: none;
         margin: 0;
-        width: 44px;
-        height: 44px;
+        width: 40px;
+        height: 40px;
         background: rgba(255, 255, 255, 0.2);
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
@@ -2239,6 +2837,87 @@ a:focus-visible {
     .preview-footer {
         padding: 12px 14px;
         font-size: 0.7rem;
+    }
+
+    .modal-description-card {
+        padding: 22px 20px 24px;
+        max-height: 88dvh;
+        border-radius: 20px;
+    }
+
+    .modal-desc-close {
+        width: 32px;
+        height: 32px;
+        margin-bottom: 18px;
+    }
+
+    .modal-desc-title {
+        font-size: 1.10rem;
+        line-height: 1.25;
+    }
+
+    .modal-desc-subtitle {
+        font-size: 0.78rem;
+        margin-bottom: 18px;
+    }
+
+    .modal-desc-body {
+        font-size: 0.88rem;
+        line-height: 1.62;
+        padding-right: 8px;
+    }
+
+    .modal-desc-fade {
+        right: 20px;
+        height: 40px;
+        border-bottom-left-radius: 20px;
+    }
+
+    /* Mobile Skeleton Adaptations */
+    div.preview-artwork-wrapper.skeleton,
+    .preview-card.is-skeleton div.preview-artwork-wrapper {
+        width: 100%;
+        height: auto;
+        aspect-ratio: 1 / 1;
+        border-radius: var(--radius-lg);
+        margin: 0;
+    }
+
+    h2.preview-title.skeleton,
+    .preview-card.is-skeleton h2.preview-title {
+        max-width: 250px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    span.preview-artist.skeleton,
+    .preview-card.is-skeleton span.preview-artist {
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    span.preview-genre.skeleton,
+    .preview-card.is-skeleton span.preview-genre {
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    div.preview-badges.skeleton,
+    .preview-card.is-skeleton div.preview-badges {
+        justify-content: center;
+    }
+
+    div.preview-footer.skeleton,
+    .preview-card.is-skeleton div.preview-footer {
+        padding: 12px 14px;
+    }
+
+    div.preview-footer.skeleton::before,
+    .preview-card.is-skeleton div.preview-footer::before,
+    div.preview-footer.skeleton::after,
+    .preview-card.is-skeleton div.preview-footer::after {
+        margin-left: auto;
+        margin-right: auto;
     }
 }
 
@@ -2525,13 +3204,20 @@ a:focus-visible {
 }
 
 /* ── Touch and Coarse Pointer Adaptations ─────────────────────────────────── */
-@media (pointer: coarse), (hover: none) {
+@media (pointer: coarse),
+(hover: none) {
     .preview-save-artwork-btn {
+        opacity: 0;
+        pointer-events: none;
+        background: rgba(0, 0, 0, 0.65);
+        width: 40px;
+        height: 40px;
+    }
+
+    .preview-save-artwork-btn.visible {
         opacity: 0.95;
         pointer-events: auto;
-        background: rgba(0, 0, 0, 0.6);
-        width: 44px;
-        height: 44px;
+        transform: scale(1);
     }
 
     .preview-track-item.has-preview .preview-play-btn {
@@ -2644,6 +3330,7 @@ a:focus-visible {
 
 /* ── Reduced Motion Accessibility ────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
+
     /* Title: Remove continuous specular shimmer; maintain static metallic luster */
     .app-title {
         animation: none !important;
@@ -2706,5 +3393,34 @@ a:focus-visible {
     .btn-paste:active {
         transform: none !important;
         opacity: 0.82 !important;
+    }
+
+    /* Skeleton shimmer disabled for reduced motion */
+    div.preview-artwork-wrapper.skeleton,
+    .preview-card.is-skeleton div.preview-artwork-wrapper,
+    h2.preview-title.skeleton,
+    .preview-card.is-skeleton h2.preview-title,
+    span.preview-artist.skeleton,
+    .preview-card.is-skeleton span.preview-artist,
+    span.preview-genre.skeleton,
+    .preview-card.is-skeleton span.preview-genre,
+    div.preview-badges.skeleton::before,
+    .preview-card.is-skeleton div.preview-badges::before,
+    div.preview-badges.skeleton::after,
+    .preview-card.is-skeleton div.preview-badges::after,
+    .preview-track-item.skeleton .skeleton-track-num,
+    .preview-track-item.skeleton .skeleton-track-title,
+    .preview-track-item.skeleton .skeleton-track-artist,
+    .preview-track-item.skeleton .skeleton-track-duration,
+    div.preview-footer.skeleton::before,
+    .preview-card.is-skeleton div.preview-footer::before,
+    div.preview-footer.skeleton::after,
+    .preview-card.is-skeleton div.preview-footer::after,
+    div.history-item.skeleton .skeleton-history-title,
+    div.history-item.skeleton .skeleton-history-artist,
+    div.history-item.skeleton .skeleton-history-badge,
+    div.history-item.skeleton .skeleton-history-date {
+        animation: none !important;
+        background: rgba(255, 255, 255, 0.08) !important;
     }
 }

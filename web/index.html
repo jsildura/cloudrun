@@ -167,6 +167,10 @@
                             <span class="preview-badge">Preview</span>
                             <span class="explicit-badge" id="preview-explicit" style="display:none">E</span>
                         </div>
+                        <div class="preview-description-wrap" id="preview-description-wrap" style="display:none">
+                            <div class="preview-description-text clamped" id="preview-description-text"></div>
+                            <button type="button" class="preview-description-more" id="preview-description-more" aria-expanded="false" style="display:none">MORE</button>
+                        </div>
                     </div>
                 </div>
                 <div class="preview-toolbar" id="preview-toolbar"></div>
@@ -619,6 +623,24 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- ── Description / Editorial Notes Modal ── -->
+    <div class="modal-overlay" id="modal-description">
+        <div class="modal modal-description-card" role="dialog" aria-labelledby="modal-desc-title">
+            <button type="button" class="modal-desc-close" data-close="modal-description" aria-label="Close" title="Close">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+            <div class="modal-desc-header">
+                <h2 class="modal-desc-title" id="modal-desc-title"></h2>
+                <div class="modal-desc-subtitle" id="modal-desc-subtitle"></div>
+            </div>
+            <div class="modal-desc-body" id="modal-desc-body"></div>
+            <div class="modal-desc-fade" id="modal-desc-fade" aria-hidden="true"></div>
         </div>
     </div>
 

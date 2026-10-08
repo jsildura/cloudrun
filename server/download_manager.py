@@ -489,14 +489,30 @@ class DownloadManager:
                     preview_url=t_preview_url,
                 ))
 
+        # Extract album/playlist description or editorial notes
+        description = ""
+        editorial_notes = attrs.get("editorialNotes") or {}
+        desc_attr = attrs.get("description") or {}
+
+        if isinstance(desc_attr, dict):
+            description = desc_attr.get("standard") or desc_attr.get("short") or ""
+        elif isinstance(desc_attr, str):
+            description = desc_attr
+
+        if not description and isinstance(editorial_notes, dict):
+            description = editorial_notes.get("standard") or editorial_notes.get("short") or ""
+        elif not description and isinstance(editorial_notes, str):
+            description = editorial_notes
+
         response = PreviewResponse(
             url=url,
             media_type=media_type,
             title=attrs.get("name", "Unknown"),
-            artist=attrs.get("artistName", "Unknown"),
+            artist=attrs.get("artistName") or attrs.get("curatorName") or "Unknown",
             genre=genre,
             year=year,
             release_date=release_date,
+            description=description,
             track_count=len(tracks),
             total_duration_ms=total_duration_ms,
             copyright=attrs.get("copyright", ""),

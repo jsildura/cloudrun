@@ -100,6 +100,7 @@ class PreviewResponse(BaseModel):
     animated_artwork_url: str = "" # HLS video URL for animated artwork
     is_explicit: bool = False
     has_dolby_atmos: bool = False
+    description: str = ""
     tracks: list[PreviewTrack] = []
 
 

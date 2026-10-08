@@ -34,10 +34,19 @@
     const previewSection = $('#preview-section');
     const previewCard = $('#preview-card');
     const previewArtwork = $('#preview-artwork');
+    const previewArtworkWrapper = $('.preview-artwork-wrapper');
     const previewTitle = $('#preview-title');
     const previewArtist = $('#preview-artist');
     const previewGenre = $('#preview-genre');
     const previewExplicit = $('#preview-explicit');
+    const previewDescriptionWrap = $('#preview-description-wrap');
+    const previewDescriptionText = $('#preview-description-text');
+    const previewDescriptionMore = $('#preview-description-more');
+    const modalDescription = $('#modal-description');
+    const modalDescTitle = $('#modal-desc-title');
+    const modalDescSubtitle = $('#modal-desc-subtitle');
+    const modalDescBody = $('#modal-desc-body');
+    const modalDescFade = $('#modal-desc-fade');
     const previewTracks = $('#preview-tracks');
     const previewToolbar = $('#preview-toolbar');
     const previewFooter = $('#preview-footer');
@@ -80,6 +89,7 @@
     let isSubmitting = false;
     let _previewUrl = null;     // URL currently shown in preview
     let _previewMediaType = null; // 'song', 'album', or 'playlist'
+    let _currentPreviewData = null; // Full metadata payload of current preview
     let _focusedJobId = null;    // Job the status bar shows detailed progress for (preview / most-recent)
     const _trackBlobs = {};     // jobId → { trackIndex: { blob, filename } }
     const _blobPromises = {};   // jobId → { trackIndex: Promise }
@@ -359,14 +369,14 @@
         }
     }
 
-    // Close modal on overlay click
+    // Close modal on overlay click or [data-close] button click
     document.addEventListener('click', (e) => {
         if (e.target.classList.contains('modal-overlay')) {
-            e.target.classList.remove('active');
-            document.body.style.overflow = '';
+            closeModal(e.target.id);
         }
-        if (e.target.dataset.close) {
-            closeModal(e.target.dataset.close);
+        const closeBtn = e.target.closest('[data-close]');
+        if (closeBtn && closeBtn.dataset.close) {
+            closeModal(closeBtn.dataset.close);
         }
     });
 
@@ -728,6 +738,31 @@
         } catch {
             _latestDownloadInfo = null;
         }
+    }
+
+    /**
+     * Show skeleton loading items for history
+     */
+    function showHistorySkeleton(count = 3) {
+        if (!historyList) return;
+        let html = '';
+        for (let i = 0; i < count; i++) {
+            html += `
+            <div class="history-item skeleton">
+                <div class="history-item-info">
+                    <span class="skeleton-history-title"></span>
+                    <span class="skeleton-history-artist"></span>
+                    <div class="skeleton-history-badges">
+                        <span class="skeleton-history-badge"></span>
+                        <span class="skeleton-history-badge"></span>
+                    </div>
+                </div>
+                <div class="history-item-meta">
+                    <span class="skeleton-history-date"></span>
+                </div>
+            </div>`;
+        }
+        historyList.innerHTML = html;
     }
 
     /**
@@ -1181,6 +1216,56 @@
         return div.innerHTML;
     }
 
+    function sanitizeRichText(htmlStr) {
+        if (!htmlStr) return '';
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(htmlStr, 'text/html');
+            const allowedTags = new Set(['I', 'EM', 'B', 'STRONG', 'BR', 'P', 'SPAN']);
+            function clean(node) {
+                const children = Array.from(node.childNodes);
+                for (const child of children) {
+                    if (child.nodeType === Node.ELEMENT_NODE) {
+                        if (!allowedTags.has(child.tagName)) {
+                            const text = document.createTextNode(child.textContent);
+                            node.replaceChild(text, child);
+                        } else {
+                            while (child.attributes.length > 0) {
+                                child.removeAttribute(child.attributes[0].name);
+                            }
+                            clean(child);
+                        }
+                    }
+                }
+            }
+            clean(doc.body);
+            return doc.body.innerHTML;
+        } catch (_) {
+            return escapeHtml(htmlStr);
+        }
+    }
+
+    function formatDescriptionHtml(rawText) {
+        if (!rawText) return '';
+        const paragraphs = rawText.split(/\n\s*\n+/);
+        if (paragraphs.length > 1) {
+            return paragraphs
+                .map(p => p.trim())
+                .filter(Boolean)
+                .map(p => `<p>${sanitizeRichText(p.replace(/\n/g, '<br>'))}</p>`)
+                .join('');
+        }
+        if (rawText.includes('\n')) {
+            return rawText
+                .split('\n')
+                .map(p => p.trim())
+                .filter(Boolean)
+                .map(p => `<p>${sanitizeRichText(p)}</p>`)
+                .join('');
+        }
+        return `<p>${sanitizeRichText(rawText.trim())}</p>`;
+    }
+
 
     // ── Preview helpers ───────────────────────────────────────────────────
 
@@ -1282,7 +1367,223 @@
         ];
     }
 
-    function showPreview(data) {
+    function showPreviewSkeleton() {
+        if (!previewSection || !previewCard) return;
+
+        // Reset any playing preview audio or HLS instances
+        if (previewCard._hlsInstance) {
+            previewCard._hlsInstance.destroy();
+            previewCard._hlsInstance = null;
+        }
+        const existingVideo = previewCard.querySelector('.preview-artwork-video');
+        if (existingVideo) existingVideo.remove();
+        if (previewArtwork) {
+            previewArtwork.style.display = 'none';
+            previewArtwork.src = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 1 1\'%3E%3C/svg%3E';
+        }
+
+        hideSaveArtworkBtn();
+
+        previewCard.classList.add('is-skeleton');
+        previewSection.classList.add('visible');
+
+        if (previewArtworkWrapper) previewArtworkWrapper.classList.add('skeleton');
+        if (previewTitle) {
+            previewTitle.classList.add('skeleton');
+            previewTitle.textContent = '';
+        }
+        if (previewArtist) {
+            previewArtist.classList.add('skeleton');
+            previewArtist.textContent = '';
+        }
+        if (previewGenre) {
+            previewGenre.classList.add('skeleton');
+            previewGenre.innerHTML = '';
+        }
+        if (previewExplicit) previewExplicit.style.display = 'none';
+        if (previewDescriptionWrap) previewDescriptionWrap.style.display = 'none';
+
+        const badgesWrap = $('.preview-badges');
+        if (badgesWrap) badgesWrap.classList.add('skeleton');
+
+        if (previewToolbar) previewToolbar.classList.remove('visible');
+
+        if (previewTracks) {
+            let html = '';
+            for (let i = 0; i < 4; i++) {
+                html += `
+                <div class="preview-track-item has-preview skeleton">
+                    <div class="skeleton-track-num"></div>
+                    <div class="preview-track-info">
+                        <div class="skeleton-track-title"></div>
+                        <div class="skeleton-track-artist"></div>
+                    </div>
+                    <div class="skeleton-track-duration"></div>
+                </div>`;
+            }
+            previewTracks.innerHTML = html;
+        }
+
+        if (previewFooter) {
+            previewFooter.classList.add('skeleton');
+            previewFooter.innerHTML = '';
+        }
+    }
+
+    async function _loadAndRenderArtwork(data) {
+        // Clean up previous video & HLS player
+        if (previewCard._hlsInstance) {
+            previewCard._hlsInstance.destroy();
+            previewCard._hlsInstance = null;
+        }
+        const existingVideo = previewArtworkWrapper ? previewArtworkWrapper.querySelector('.preview-artwork-video') : null;
+        if (existingVideo) existingVideo.remove();
+
+        let dominantColor = null;
+
+        // 1. Always load and decode the static artwork first (serves as base cover or video poster)
+        if (data.artwork_url) {
+            try {
+                await new Promise((resolve) => {
+                    let isResolved = false;
+                    const finish = () => {
+                        if (!isResolved) {
+                            isResolved = true;
+                            resolve();
+                        }
+                    };
+
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = () => {
+                        try {
+                            if (!dominantColor) dominantColor = extractDominantColor(img);
+                        } catch (_) {}
+                        finish();
+                    };
+                    img.onerror = () => finish();
+                    img.src = data.artwork_url;
+
+                    if (typeof img.decode === 'function') {
+                        img.decode().then(() => {
+                            try {
+                                if (!dominantColor) dominantColor = extractDominantColor(img);
+                            } catch (_) {}
+                            finish();
+                        }).catch(() => {});
+                    }
+
+                    // Safety timeout: 2500ms
+                    setTimeout(finish, 2500);
+                });
+            } catch (_) {}
+
+            if (previewArtwork) {
+                previewArtwork.src = data.artwork_url;
+                previewArtwork.style.display = '';
+            }
+        }
+
+        // Apply dominant color to card background gradient immediately
+        if (dominantColor) {
+            previewCard.style.setProperty('--preview-bg', `rgba(${dominantColor.r},${dominantColor.g},${dominantColor.b},0.4)`);
+        } else if (previewArtwork && previewArtwork.complete && previewArtwork.naturalWidth > 0) {
+            try {
+                const color = extractDominantColor(previewArtwork);
+                previewCard.style.setProperty('--preview-bg', `rgba(${color.r},${color.g},${color.b},0.4)`);
+            } catch (_) {
+                previewCard.style.removeProperty('--preview-bg');
+            }
+        }
+
+        // 2. Handle animated artwork (HLS video stream)
+        const hasAnimated = Boolean(data.animated_artwork_url && typeof Hls !== 'undefined');
+        if (hasAnimated && previewArtworkWrapper) {
+            previewSaveArtworkBtn.title = "Save Animated Artwork";
+            previewSaveArtworkBtn.dataset.url = data.animated_artwork_url;
+            previewSaveArtworkBtn.dataset.type = "video/mp4";
+
+            const video = document.createElement('video');
+            video.className = 'preview-artwork preview-artwork-video';
+            video.autoplay = true;
+            video.loop = true;
+            video.muted = true;
+            video.playsInline = true;
+            video.poster = data.artwork_url || '';
+            video.setAttribute('crossorigin', 'anonymous');
+            video.setAttribute('playsinline', '');
+            video.setAttribute('webkit-playsinline', '');
+
+            // Insert video right after previewArtwork so it sits directly on top of the image
+            previewArtworkWrapper.insertBefore(video, previewArtwork.nextSibling);
+
+            // Wait for video to have first frame ready (loadeddata / canplay)
+            await new Promise((resolve) => {
+                let isDone = false;
+                const onReady = () => {
+                    if (!isDone) {
+                        isDone = true;
+                        video.play().catch(() => {});
+                        resolve();
+                    }
+                };
+
+                video.addEventListener('loadeddata', onReady, { once: true });
+                video.addEventListener('canplay', onReady, { once: true });
+                video.addEventListener('playing', onReady, { once: true });
+                video.addEventListener('error', () => {
+                    if (!isDone) {
+                        isDone = true;
+                        video.remove();
+                        resolve();
+                    }
+                }, { once: true });
+
+                if (Hls.isSupported()) {
+                    const hls = new Hls({ enableWorker: false });
+                    hls.loadSource(data.animated_artwork_url);
+                    hls.attachMedia(video);
+                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                        video.play().catch(() => {});
+                    });
+                    hls.on(Hls.Events.ERROR, (event, errData) => {
+                        if (errData && errData.fatal) {
+                            if (!isDone) {
+                                isDone = true;
+                                video.remove();
+                                resolve();
+                            }
+                        }
+                    });
+                    previewCard._hlsInstance = hls;
+                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    video.src = data.animated_artwork_url;
+                    video.addEventListener('loadedmetadata', () => {
+                        video.play().catch(() => {});
+                    }, { once: true });
+                } else {
+                    video.remove();
+                    resolve();
+                    return;
+                }
+
+                if (video.readyState >= 2) {
+                    onReady();
+                    return;
+                }
+
+                // Safety timeout: 3000ms max so slow video buffering doesn't stall the UI
+                setTimeout(onReady, 3000);
+            });
+        } else {
+            previewSaveArtworkBtn.title = "Save Artwork";
+            previewSaveArtworkBtn.dataset.url = data.artwork_url || '';
+            previewSaveArtworkBtn.dataset.type = "image/jpeg";
+        }
+    }
+
+    async function showPreview(data, startTime = Date.now(), minSkeletonMs = 500) {
+        _currentPreviewData = data;
         _previewUrl = data.url;
         _previewMediaType = data.media_type || null;
 
@@ -1305,69 +1606,23 @@
         previewGenre.innerHTML = genreParts.join(' · ');
         previewExplicit.style.display = data.is_explicit ? '' : 'none';
 
-        // Set artwork: prefer animated (video) over static (image)
-        if (data.animated_artwork_url && typeof Hls !== 'undefined') {
-            previewSaveArtworkBtn.title = "Save Animated Artwork";
-            previewSaveArtworkBtn.dataset.url = data.animated_artwork_url;
-            previewSaveArtworkBtn.dataset.type = "video/mp4";
+        // Populate and toggle description
+        if (data.description && data.description.trim()) {
+            previewDescriptionText.innerHTML = sanitizeRichText(data.description.trim());
+            previewDescriptionText.classList.add('clamped');
+            previewDescriptionMore.textContent = 'MORE';
+            previewDescriptionWrap.style.display = 'block';
 
-            // Animated artwork — show looping silent video
-            previewArtwork.style.display = 'none';
-
-            // Remove any existing video
-            const existingVideo = previewArtwork.parentElement.querySelector('.preview-artwork-video');
-            if (existingVideo) existingVideo.remove();
-
-            const video = document.createElement('video');
-            video.className = 'preview-artwork preview-artwork-video';
-            video.autoplay = true;
-            video.loop = true;
-            video.muted = true;
-            video.playsInline = true;
-            video.poster = data.artwork_url;
-            video.setAttribute('crossorigin', 'anonymous');
-            video.addEventListener('loadeddata', () => {
-                const wrapper = previewArtwork.parentElement;
-                wrapper.insertBefore(video, previewArtwork);
+            // Check if text is long enough to warrant a MORE button
+            requestAnimationFrame(() => {
+                const isClampedOverflow = (previewDescriptionText.scrollHeight > previewDescriptionText.clientHeight + 4)
+                    || data.description.trim().length > 180;
+                previewDescriptionMore.style.display = isClampedOverflow ? 'inline-block' : 'none';
             });
-
-            if (Hls.isSupported()) {
-                const hls = new Hls({ enableWorker: false });
-                hls.loadSource(data.animated_artwork_url);
-                hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
-                // Store for cleanup
-                previewCard._hlsInstance = hls;
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                // Safari native HLS
-                video.src = data.animated_artwork_url;
-                video.addEventListener('loadedmetadata', () => video.play());
-            }
-
-            // Extract color from the static poster image
-            const posterImg = new Image();
-            posterImg.crossOrigin = 'anonymous';
-            posterImg.onload = () => {
-                const color = extractDominantColor(posterImg);
-                previewCard.style.setProperty('--preview-bg', `rgba(${color.r},${color.g},${color.b},0.4)`);
-            };
-            posterImg.src = data.artwork_url;
         } else {
-            previewSaveArtworkBtn.title = "Save Artwork";
-            previewSaveArtworkBtn.dataset.url = data.artwork_url;
-            previewSaveArtworkBtn.dataset.type = "image/jpeg";
-
-            // Static artwork — standard image
-            // Remove any existing video
-            const existingVideo = previewArtwork.parentElement.querySelector('.preview-artwork-video');
-            if (existingVideo) existingVideo.remove();
-            previewArtwork.style.display = '';
-
-            previewArtwork.src = data.artwork_url;
-            previewArtwork.onload = () => {
-                const color = extractDominantColor(previewArtwork);
-                previewCard.style.setProperty('--preview-bg', `rgba(${color.r},${color.g},${color.b},0.4)`);
-            };
+            previewDescriptionWrap.style.display = 'none';
+            previewDescriptionText.innerHTML = '';
+            previewDescriptionMore.style.display = 'none';
         }
 
         // Build track list (with hidden checkboxes for selection)
@@ -1429,6 +1684,26 @@
             previewToolbar.innerHTML = '';
             previewToolbar.classList.remove('visible');
         }
+
+        // ── Fully load & buffer artwork (static image and/or animated video) ──
+        await _loadAndRenderArtwork(data);
+
+        // ── Ensure minimum dwell time so fast/cached requests do not flicker ──
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(0, minSkeletonMs - elapsed);
+        if (remaining > 0) {
+            await new Promise((r) => setTimeout(r, remaining));
+        }
+
+        // ── Reveal: Dismiss skeleton state only now that ALL content & artwork are 100% ready ──
+        previewCard.classList.remove('is-skeleton');
+        if (previewArtworkWrapper) previewArtworkWrapper.classList.remove('skeleton');
+        if (previewTitle) previewTitle.classList.remove('skeleton');
+        if (previewArtist) previewArtist.classList.remove('skeleton');
+        if (previewGenre) previewGenre.classList.remove('skeleton');
+        const badgesWrap = $('.preview-badges');
+        if (badgesWrap) badgesWrap.classList.remove('skeleton');
+        if (previewFooter) previewFooter.classList.remove('skeleton');
 
         // Show section
         previewSection.classList.add('visible');
@@ -1662,6 +1937,28 @@
         const existingVideo = previewCard.querySelector('.preview-artwork-video');
         if (existingVideo) existingVideo.remove();
         previewArtwork.style.display = '';
+
+        // Reset skeleton & description & artwork button state
+        previewCard.classList.remove('is-skeleton');
+        if (previewArtworkWrapper) previewArtworkWrapper.classList.remove('skeleton');
+        if (previewTitle) previewTitle.classList.remove('skeleton');
+        if (previewArtist) previewArtist.classList.remove('skeleton');
+        if (previewGenre) previewGenre.classList.remove('skeleton');
+        const badgesWrap = $('.preview-badges');
+        if (badgesWrap) badgesWrap.classList.remove('skeleton');
+        if (previewFooter) previewFooter.classList.remove('skeleton');
+
+        _currentPreviewData = null;
+        hideSaveArtworkBtn();
+        closeModal('modal-description');
+        if (previewDescriptionWrap) previewDescriptionWrap.style.display = 'none';
+        if (previewDescriptionText) {
+            previewDescriptionText.innerHTML = '';
+            previewDescriptionText.classList.add('clamped');
+        }
+        if (previewDescriptionMore) {
+            previewDescriptionMore.style.display = 'none';
+        }
 
         // Re-enable input bar
         setUrlInputEnabled(true);
@@ -1936,15 +2233,20 @@
         btnSubmit.disabled = true;
         btnSubmit.textContent = 'Loading…';
         setStatusText('Loading...');
+        showPreviewSkeleton();
+
+        const startTime = Date.now();
+        const MIN_SKELETON_MS = 500;
 
         try {
             const userCfg = loadLocalSettings();
             const data = await api.previewUrl(raw, userCfg);
             clearStatus();
-            showPreview(data);
+            await showPreview(data, startTime, MIN_SKELETON_MS);
         } catch (e) {
             clearStatus();
             toast(e.message || 'Failed to load preview', 'error');
+            hidePreview();
             setUrlInputEnabled(true);
         } finally {
             isSubmitting = false;
@@ -1954,6 +2256,42 @@
             }
         }
     });
+
+    // ── Preview Artwork Save Button (Mobile Touch / Click Reveal) ─────────
+    let _saveArtworkBtnTimer = null;
+
+    function showSaveArtworkBtn(durationMs = 3500) {
+        if (!previewSaveArtworkBtn) return;
+        previewSaveArtworkBtn.classList.add('visible');
+        if (_saveArtworkBtnTimer) clearTimeout(_saveArtworkBtnTimer);
+        _saveArtworkBtnTimer = setTimeout(() => {
+            previewSaveArtworkBtn.classList.remove('visible');
+            _saveArtworkBtnTimer = null;
+        }, durationMs);
+    }
+
+    function hideSaveArtworkBtn() {
+        if (!previewSaveArtworkBtn) return;
+        if (_saveArtworkBtnTimer) {
+            clearTimeout(_saveArtworkBtnTimer);
+            _saveArtworkBtnTimer = null;
+        }
+        previewSaveArtworkBtn.classList.remove('visible');
+    }
+
+    if (previewArtworkWrapper) {
+        previewArtworkWrapper.addEventListener('click', (e) => {
+            // Ignore clicks directly on the save button or download button
+            if (e.target.closest('#preview-save-artwork-btn') || e.target.closest('#preview-download-btn')) {
+                return;
+            }
+            if (previewSaveArtworkBtn && previewSaveArtworkBtn.classList.contains('visible')) {
+                hideSaveArtworkBtn();
+            } else {
+                showSaveArtworkBtn(3500);
+            }
+        });
+    }
 
     // Save artwork button handler
     previewSaveArtworkBtn.addEventListener('click', async (e) => {
@@ -2009,6 +2347,7 @@
 
             setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
             toast('Artwork saved', 'success');
+            setTimeout(() => hideSaveArtworkBtn(), 1200);
         } catch (err) {
             console.error('Failed to download artwork:', err);
             window.open(url, '_blank'); // fallback
@@ -2045,6 +2384,49 @@
             setUrlInputEnabled(true);
         }
     });
+
+    // Preview description: clicking MORE opens the popup modal with full description
+    if (previewDescriptionMore) {
+        previewDescriptionMore.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!_currentPreviewData || !_currentPreviewData.description) return;
+
+            // Populate modal title: Album/Playlist Title
+            if (modalDescTitle) {
+                modalDescTitle.textContent = _currentPreviewData.title || '';
+            }
+
+            // Populate modal subtitle: Artist • Year
+            if (modalDescSubtitle) {
+                const artist = _currentPreviewData.artist || 'Unknown';
+                const year = _currentPreviewData.year || (_currentPreviewData.release_date ? _currentPreviewData.release_date.slice(0, 4) : '');
+                modalDescSubtitle.textContent = year ? `${artist} • ${year}` : artist;
+            }
+
+            // Populate modal description with clean formatting
+            if (modalDescBody) {
+                modalDescBody.innerHTML = formatDescriptionHtml(_currentPreviewData.description);
+                modalDescBody.scrollTop = 0;
+            }
+
+            openModal('modal-description');
+
+            if (modalDescFade && modalDescBody) {
+                requestAnimationFrame(() => {
+                    const hasOverflow = modalDescBody.scrollHeight > (modalDescBody.clientHeight + 8);
+                    modalDescFade.style.opacity = hasOverflow ? '1' : '0';
+                });
+            }
+        });
+    }
+
+    if (modalDescBody && modalDescFade) {
+        modalDescBody.addEventListener('scroll', () => {
+            const atBottom = modalDescBody.scrollTop + modalDescBody.clientHeight >= modalDescBody.scrollHeight - 16;
+            modalDescFade.style.opacity = atBottom ? '0' : '1';
+        }, { passive: true });
+    }
 
     // Cancel text — delegated click handler on status container
     statusContainer.addEventListener('click', async (e) => {
@@ -2607,7 +2989,20 @@
 
         // ── Firebase: Subscribe to download history & counter ──
         if (typeof subscribeToDownloadHistory === 'function') {
-            subscribeToDownloadHistory((items) => {
+            showHistorySkeleton(3);
+            const historyStartTime = Date.now();
+            const MIN_HISTORY_SKELETON_MS = 400;
+            let initialHistoryLoaded = false;
+
+            subscribeToDownloadHistory(async (items) => {
+                if (!initialHistoryLoaded) {
+                    initialHistoryLoaded = true;
+                    const elapsed = Date.now() - historyStartTime;
+                    const remaining = Math.max(0, MIN_HISTORY_SKELETON_MS - elapsed);
+                    if (remaining > 0) {
+                        await new Promise((resolve) => setTimeout(resolve, remaining));
+                    }
+                }
                 renderHistoryList(items);
             }, 5);
         }
@@ -2679,4 +3074,7 @@
     } else {
         init();
     }
+    // Expose helpers globally
+    window.showPreviewSkeleton = showPreviewSkeleton;
+    window.showHistorySkeleton = showHistorySkeleton;
 })();
