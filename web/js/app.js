@@ -836,8 +836,9 @@
 
         function updateFetchStatus(text, pct) {
             if (isFocusedPreview) {
+                const scaleVal = Math.max(0, Math.min(100, pct)) / 100;
                 const progressBar = pct >= 0
-                    ? `<div class="status-progress-bar processing"><div class="status-progress-fill" style="width:${pct}%"></div></div>`
+                    ? `<div class="status-progress-bar processing"><div class="status-progress-fill" style="transform: scaleX(${scaleVal}); --progress: ${scaleVal};"></div></div>`
                     : '';
                 setStatus(`<span class="status-text">${escapeHtml(text)}</span>${progressBar}`);
             }
@@ -1799,7 +1800,8 @@
         const isProcessing = (stage === 'downloading') || (stage === 'done');
         if (progressPct >= 0) {
             const processingClass = isProcessing ? ' processing' : '';
-            progressBar = `<div class="status-progress-bar${processingClass}"><div class="status-progress-fill" style="width:${progressPct}%"></div></div>`;
+            const scaleVal = Math.max(0, Math.min(100, progressPct)) / 100;
+            progressBar = `<div class="status-progress-bar${processingClass}"><div class="status-progress-fill" style="transform: scaleX(${scaleVal}); --progress: ${scaleVal};"></div></div>`;
         }
 
         // Build cancel link for active stages
@@ -2652,7 +2654,8 @@
         // animation cycle) and then fades out once init() has finished.
         const splash = document.getElementById('splash-screen');
         if (splash) {
-            const SPLASH_MIN_DURATION = 5000; // 5 seconds minimum
+            const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const SPLASH_MIN_DURATION = prefersReducedMotion ? 500 : 5000;
             const splashStart = window.__splashStart || Date.now();
             const elapsed = Date.now() - splashStart;
             const remaining = Math.max(0, SPLASH_MIN_DURATION - elapsed);

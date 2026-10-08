@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="description" content="Amdlx — Apple Music Downloader Web Interface">
     <meta name="robots" content="noindex, nofollow">
     <meta name="theme-color" content="#1a1a1e">
@@ -119,7 +119,7 @@
             <div class="url-input-wrap">
                 <div class="url-input-inner">
                     <input type="url" class="url-input" id="url-input" placeholder="https://music.apple.com/..."
-                        autocomplete="off" autocorrect="off" spellcheck="false" required>
+                        autocomplete="off" autocorrect="off" spellcheck="false" required aria-label="Apple Music URL">
                     <button type="button" class="btn-paste" id="btn-paste" title="Paste from clipboard"
                         aria-label="Paste from clipboard">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -135,13 +135,13 @@
             </div>
         </form>
 
-        <div class="status-container" id="status-container"></div>
+        <div class="status-container" id="status-container" role="status" aria-live="polite"></div>
 
         <section class="preview-section" id="preview-section">
             <div class="preview-card" id="preview-card">
                 <div class="preview-header">
                     <div class="preview-artwork-wrapper">
-                        <img class="preview-artwork" id="preview-artwork" src="" alt="" crossorigin="anonymous">
+                        <img class="preview-artwork" id="preview-artwork" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E" alt="Album artwork preview" crossorigin="anonymous">
                         <button class="preview-save-artwork-btn" id="preview-save-artwork-btn" title="Save Artwork">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -218,7 +218,7 @@
 
                     <!-- Cookie upload drop zone -->
                     <div class="cookie-dropzone" id="cookie-upload">
-                        <input type="file" id="cookie-file" accept=".txt" hidden>
+                        <input type="file" id="cookie-file" accept=".txt" hidden aria-label="Upload Netscape cookies file">
                         <svg class="cookie-dropzone-icon" width="28" height="28" viewBox="0 0 24 24" fill="none"
                             stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -281,7 +281,7 @@
                                 <div class="reserve-input-group">
                                     <input type="password" id="reserve-passcode"
                                         class="input-field reserve-passcode-input" placeholder="Enter access passcode"
-                                        autocomplete="current-password">
+                                        autocomplete="current-password" aria-label="Access passcode">
                                     <button type="button" class="btn-auth btn-reserve-unlock" id="btn-reserve-unlock">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                                             stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -321,7 +321,7 @@
                                 </div>
                             </div>
                             <div class="reserve-selector-row">
-                                <select class="select-input reserve-account-select" id="reserve-account-select">
+                                <select class="select-input reserve-account-select" id="reserve-account-select" aria-label="Select reserve account">
                                     <option value="" disabled selected>Select an account...</option>
                                 </select>
                             </div>

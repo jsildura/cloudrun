@@ -1,0 +1,226 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-08T09:14:00+08:00",
+  "title": "Design System: Amdlxd",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Electric Apple Raspberry",
+        "canonical": "oklch(63% 0.24 15)",
+        "tonalRamp": [
+          "#3a0b14",
+          "#5e1020",
+          "#87162d",
+          "#b31e3d",
+          "#e02a4f",
+          "#ff375f",
+          "#ff6b8b",
+          "#ff9fb3"
+        ]
+      },
+      "canvas-base": {
+        "role": "neutral",
+        "displayName": "Obsidian Base Canvas",
+        "canonical": "oklch(21% 0.005 285)",
+        "tonalRamp": [
+          "#101014",
+          "#151518",
+          "#1a1a1e",
+          "#242428",
+          "#28282e",
+          "#34343c",
+          "#484852",
+          "#6e6e73"
+        ]
+      },
+      "text-primary": {
+        "role": "neutral",
+        "displayName": "Pure Text White-Zinc",
+        "canonical": "oklch(96% 0.003 260)",
+        "tonalRamp": [
+          "#6e6e73",
+          "#86868b",
+          "#a1a1a6",
+          "#c7c7cc",
+          "#d1d1d6",
+          "#e5e5ea",
+          "#f2f2f7",
+          "#f5f5f7"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero title with metallic shimmer animation."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Track and album titles in preview card."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Modal dialog headers and section titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default UI copy, descriptions, and input text."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase settings headings and explicit badges."
+      }
+    },
+    "shadows": [
+      {
+        "name": "shadow-sm",
+        "value": "0 2px 8px rgba(0, 0, 0, 0.2)",
+        "purpose": "Subtle elevation for chips and utility tags."
+      },
+      {
+        "name": "shadow-md",
+        "value": "0 4px 16px rgba(0, 0, 0, 0.3)",
+        "purpose": "Card depth and album artwork floating shadow."
+      },
+      {
+        "name": "shadow-lg",
+        "value": "0 8px 32px rgba(0, 0, 0, 0.4)",
+        "purpose": "Modal dialog elevation over blurred overlay."
+      },
+      {
+        "name": "shadow-glow",
+        "value": "0 0 20px rgba(255, 55, 95, 0.25)",
+        "purpose": "Electric raspberry bloom on hover and focus states."
+      }
+    ],
+    "motion": [
+      {
+        "name": "transition-fast",
+        "value": "150ms ease",
+        "purpose": "Hover transitions, button scale down, and border color shifts."
+      },
+      {
+        "name": "transition-normal",
+        "value": "250ms ease",
+        "purpose": "Modal entrance and component state swaps."
+      },
+      {
+        "name": "transition-slow",
+        "value": "400ms ease",
+        "purpose": "Section reveals, progress fill transitions, and splash exit."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mobile",
+        "value": "480px"
+      },
+      {
+        "name": "app-max",
+        "value": "600px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Action Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "High-prominence gradient button used for initiating preview and download actions.",
+      "html": "<button class=\"ds-btn-primary\">Preview</button>",
+      "css": ".ds-btn-primary { height: 42px; padding: 0 28px; background: linear-gradient(135deg, #ff375f 0%, #ff6482 100%); border: none; border-radius: 12px; color: #fff; font-family: 'Inter', -apple-system, sans-serif; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 150ms ease; box-shadow: 0 2px 12px rgba(255, 55, 95, 0.25); white-space: nowrap; } .ds-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 0 20px rgba(255, 55, 95, 0.25); } .ds-btn-primary:active { transform: translateY(0) scale(0.97); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Subdued zinc action button for secondary dialog choices.",
+      "html": "<button class=\"ds-btn-secondary\">Cancel</button>",
+      "css": ".ds-btn-secondary { height: 44px; padding: 0 20px; background: #2e2e34; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; color: #f5f5f7; font-family: 'Inter', -apple-system, sans-serif; font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: all 150ms ease; } .ds-btn-secondary:hover { background: #34343c; } .ds-btn-secondary:active { transform: scale(0.97); }"
+    },
+    {
+      "name": "Icon Action Button",
+      "kind": "button",
+      "refersTo": "button-icon",
+      "description": "Circular / soft square utility button for header controls and dialog closing.",
+      "html": "<button class=\"ds-btn-icon\" aria-label=\"Settings\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z\"/></svg></button>",
+      "css": ".ds-btn-icon { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: none; border-radius: 8px; color: #a1a1a6; cursor: pointer; transition: all 150ms ease; } .ds-btn-icon:hover { color: #f5f5f7; background: #34343c; } .ds-btn-icon:active { transform: scale(0.92); }"
+    },
+    {
+      "name": "URL Input Field",
+      "kind": "input",
+      "refersTo": "input-text",
+      "description": "Primary URL destination input with ghost border and electric focus ring.",
+      "html": "<input type=\"url\" class=\"ds-input-url\" placeholder=\"https://music.apple.com/...\" value=\"https://music.apple.com/\">",
+      "css": ".ds-input-url { width: 100%; height: 42px; padding: 0 18px; background: #2a2a30; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; color: #f5f5f7; font-family: 'Inter', -apple-system, sans-serif; font-size: 0.95rem; outline: none; transition: all 150ms ease; } .ds-input-url:focus { border-color: rgba(255, 55, 95, 0.5); box-shadow: 0 0 0 3px rgba(255, 55, 95, 0.25); }"
+    },
+    {
+      "name": "Traffic Light Auth Badge",
+      "kind": "custom",
+      "refersTo": "badge-auth",
+      "description": "Signature 3-dot Apple status indicator displaying connection state.",
+      "html": "<div class=\"ds-auth-badge\"><span class=\"ds-auth-dot ds-dot-red\"></span><span class=\"ds-auth-dot ds-dot-yellow\"></span><span class=\"ds-auth-dot ds-dot-green ds-active\"></span></div>",
+      "css": ".ds-auth-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px; } .ds-auth-dot { width: 10px; height: 10px; border-radius: 50%; opacity: 0.25; transition: opacity 300ms ease, box-shadow 300ms ease; } .ds-dot-red { background: #ff453a; } .ds-dot-yellow { background: #ffd60a; } .ds-dot-green { background: #30d158; } .ds-auth-dot.ds-active { opacity: 1; box-shadow: 0 0 6px rgba(48, 209, 88, 0.5); }"
+    },
+    {
+      "name": "Preview Card Shell",
+      "kind": "card",
+      "refersTo": "card-preview",
+      "description": "Media card featuring artwork, track details, and action buttons.",
+      "html": "<div class=\"ds-preview-card\"><div class=\"ds-preview-header\"><div class=\"ds-artwork-placeholder\"><svg width=\"32\" height=\"32\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#9a9aa0\" stroke-width=\"1.5\"><path d=\"M9 18V5l12-2v13\"/><circle cx=\"6\" cy=\"18\" r=\"3\"/><circle cx=\"18\" cy=\"16\" r=\"3\"/></svg></div><div class=\"ds-preview-meta\"><h2 class=\"ds-preview-title\">Track Title</h2><span class=\"ds-preview-artist\">Artist Name</span><span class=\"ds-preview-genre\">Alternative • 2024</span></div></div></div>",
+      "css": ".ds-preview-card { background: #28282e; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 16px; overflow: hidden; width: 100%; max-width: 520px; } .ds-preview-header { display: flex; align-items: center; gap: 16px; padding: 20px; background: linear-gradient(180deg, rgba(255, 55, 95, 0.15) 0%, transparent 100%); } .ds-artwork-placeholder { width: 90px; height: 90px; border-radius: 12px; background: #1a1a1e; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0,0,0,0.3); flex-shrink: 0; } .ds-preview-meta { display: flex; flex-direction: column; gap: 2px; } .ds-preview-title { font-family: 'Inter', -apple-system, sans-serif; font-size: 1.15rem; font-weight: 700; color: #f5f5f7; margin: 0; } .ds-preview-artist { font-family: 'Inter', -apple-system, sans-serif; font-size: 0.9rem; font-weight: 500; color: #ff375f; } .ds-preview-genre { font-family: 'Inter', -apple-system, sans-serif; font-size: 0.78rem; color: #9a9aa0; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Cupertino Studio Vault",
+    "overview": "Amdlxd is constructed as a precision nocturnal studio environment designed for audiophiles and music collectors. Set against an obsidian zinc canvas (#1a1a1e), interface elements sit in quiet, layered hierarchy, allowing vibrant cover artwork and media metadata to command visual priority. Rather than relying on loud marketing gradients or heavy ornamentation, the system channels Apple's industrial restraint: razor-thin ghost borders, deep surface contrast, and tactile physical feedback.\n\nThe interface centers on focused single-action workflows: pasting an Apple Music URL, inspecting rich track/album intelligence, and initiating high-fidelity downloads. Accent luminescence is strictly rationed: Electric Apple Raspberry (#ff375f) is preserved as a precious signal color, ignited only when user intent or active progress demands immediate focus.",
+    "keyCharacteristics": [
+      "Obsidian Zinc Canvas: Deep #1a1a1e base canvas with stepped tonal altitudes for cards, controls, and dialogs.",
+      "Electric Raspberry Signaling: High-chroma #ff375f reserved exclusively for primary actions, active playback cues, and progress indicators.",
+      "Hairline Ghost Framing: Subtle rgba(255, 255, 255, 0.08) borders that carve structure without competing for contrast.",
+      "Tactile Micro-Physics: Snappy 150ms transitions paired with physical button compression (scale(0.92) to scale(0.97)) on interaction."
+    ],
+    "rules": [
+      {
+        "name": "The Rarity Rule",
+        "body": "Electric Apple Raspberry (#ff375f) is used on <=10% of any given screen. Its scarcity is the point: when it appears, the eye knows instantly where execution happens.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ghost Border Rule",
+        "body": "Surfaces are never divided with heavy solid lines or opaque gray strokes. Boundaries are always hairline ghost borders at rgba(255, 255, 255, 0.08), preserving the illusion of seamless dark glass.",
+        "section": "colors"
+      },
+      {
+        "name": "The Contrast Guarantee Rule",
+        "body": "All text sitting on obsidian or zinc surfaces must strictly maintain WCAG AA contrast ratios (minimum 4.5:1 for body text, 3:1 for large display titles). Subdued labels never drop below #a1a1a6 when interactive.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tonal Altitude Rule",
+        "body": "Surfaces rise toward light. Base canvas is always darkest (#1a1a1e), containers are elevated (#28282e), and interactive hovers brighten (#34343c). Shadows only accentuate this tonal separation, never replace it.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Proportional Curve Rule",
+        "body": "The corner radius scales with container area. Tight buttons never wear 20px pill radiuses, and massive dialog cards never wear sharp 4px corners.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do maintain the #1a1a1e obsidian background as the bedrock canvas of the application.",
+      "Do preserve the hairline ghost border pattern (rgba(255, 255, 255, 0.08)) on all elevated cards and inputs.",
+      "Do limit Electric Apple Raspberry (#ff375f) to primary call-to-actions, focus states, and active progress fills.",
+      "Do apply tactile micro-compression (scale(0.92) to scale(0.97)) on button press for immediate physical feedback.",
+      "Do adapt inputs to full-width generous touch targets (56px-60px height) on mobile viewports (<=480px)."
+    ],
+    "donts": [
+      "Don't use opaque high-contrast gray borders (e.g. #555 or #777) that slice up dark surfaces into harsh boxes.",
+      "Don't introduce generic corporate blue, purple, or green accents for brand identity; color belongs to music artwork.",
+      "Don't clutter the single-column focused workflow with multi-column sidebars, banner widgets, or promotional badges.",
+      "Don't sacrifice WCAG AA text contrast on dark backgrounds; never set body or secondary text below #a1a1a6.",
+      "Don't strip away tactile active press states or transition timings on interactive buttons."
+    ]
+  }
+}

@@ -507,3 +507,35 @@
         width: 120px;
     }
 }
+
+/* ── Reduced Motion Accessibility ────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+    .splash-screen {
+        transition: opacity 0.25s ease !important;
+        transform: none !important;
+    }
+
+    .splash-screen.splash-exit {
+        transform: none !important;
+        opacity: 0 !important;
+    }
+
+    .splash-aura,
+    .splash-aura-secondary,
+    .splash-particles,
+    .splash-ribbons {
+        display: none !important;
+        animation: none !important;
+    }
+
+    .splash-logo {
+        animation: none !important;
+        stroke-dashoffset: 0 !important;
+        opacity: 1 !important;
+        filter: drop-shadow(0 0 16px rgba(255, 55, 95, 0.45));
+    }
+
+    .splash-loading-bar-fill {
+        animation-duration: 0.5s !important;
+    }
+}

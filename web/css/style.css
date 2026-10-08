@@ -14,8 +14,8 @@
 
     --text-primary: #f5f5f7;
     --text-secondary: #a1a1a6;
-    --text-muted: #6e6e73;
-    --text-placeholder: #555560;
+    --text-muted: #9a9aa0;
+    --text-placeholder: #8e8e93;
 
     --accent: #ff375f;
     --accent-hover: #ff5277;
@@ -72,7 +72,7 @@ body {
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    padding: 0 16px;
+    padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) max(20px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -93,12 +93,26 @@ a:hover {
     color: var(--accent-hover);
 }
 
+/* ── Focus Visibility ─────────────────────────────────────────────────────── */
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
 
 /* ── App Layout ────────────────────────────────────────────────────────────── */
 .app {
     width: 100%;
     max-width: 600px;
-    padding: 30px 0 60px;
+    padding: 30px 0 calc(60px + env(safe-area-inset-bottom, 0px));
     position: relative;
 }
 
@@ -446,7 +460,7 @@ a:hover {
     display: none;
     align-items: center;
     justify-content: center;
-    padding: 20px;
+    padding: max(20px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px)) max(20px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
     z-index: 1000;
     animation: fadeIn 0.4s ease;
 }
@@ -487,8 +501,8 @@ a:hover {
 }
 
 .modal-close {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -496,10 +510,11 @@ a:hover {
     border: none;
     border-radius: 50%;
     color: var(--text-secondary);
-    font-size: 1.2rem;
+    font-size: 1.3rem;
     cursor: pointer;
     transition: all var(--transition-fast);
     -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
 }
 
 .modal-close:hover {
@@ -638,8 +653,8 @@ a:hover {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    height: 30px;
-    padding: 0 10px;
+    min-height: 36px;
+    padding: 0 12px;
     background: rgba(255, 159, 10, 0.1);
     border: 1px solid rgba(255, 159, 10, 0.3);
     border-radius: var(--radius-sm);
@@ -875,8 +890,8 @@ a:hover {
 }
 
 .btn-auth-disconnect:hover {
-    border-color: var(--error);
-    color: var(--error);
+    border-color: #ff7b72;
+    color: #ff7b72;
 }
 
 .btn-auth-reconnect:hover {
@@ -927,11 +942,11 @@ a:hover {
 }
 
 .reserve-badge {
-    font-size: 0.68rem;
+    font-size: 0.72rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    padding: 2px 7px;
+    padding: 2px 8px;
     border-radius: 10px;
     background: rgba(255, 45, 85, 0.12);
     color: var(--accent);
@@ -1008,15 +1023,26 @@ a:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
+    position: relative;
+    width: 32px;
+    height: 32px;
     padding: 0;
     background: transparent;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 6px;
     color: var(--text-muted);
     cursor: pointer;
     transition: all var(--transition-fast);
+}
+
+.btn-icon-subtle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    min-width: 44px;
+    min-height: 44px;
 }
 
 .btn-icon-subtle:hover {
@@ -1047,6 +1073,7 @@ a:hover {
 
 .btn-reserve-connect {
     flex: 1;
+    min-height: 44px;
     justify-content: center;
     background: var(--accent-gradient);
     border: none;
@@ -1066,15 +1093,16 @@ a:hover {
 }
 
 .btn-reserve-delete {
-    width: 38px;
+    width: 44px;
+    min-height: 44px;
     padding: 0;
     justify-content: center;
     color: var(--text-muted);
 }
 
 .btn-reserve-delete:hover:not(:disabled) {
-    border-color: var(--error);
-    color: var(--error);
+    border-color: #ff7b72;
+    color: #ff7b72;
 }
 
 
@@ -1122,8 +1150,8 @@ a:hover {
 /* ── Toast ─────────────────────────────────────────────────────────────────── */
 #toast-container {
     position: fixed;
-    top: 20px;
-    right: 20px;
+    top: max(20px, env(safe-area-inset-top, 0px));
+    right: max(20px, env(safe-area-inset-right, 0px));
     z-index: 2000;
     display: flex;
     flex-direction: column;
@@ -1243,7 +1271,7 @@ a:hover {
 /* ── Responsive ────────────────────────────────────────────────────────────── */
 @media (max-width: 480px) {
     .app {
-        padding: 0px 0 40px;
+        padding: 0px 0 calc(50px + env(safe-area-inset-bottom, 0px));
     }
 
     .header-icons {
@@ -1266,8 +1294,13 @@ a:hover {
     .url-input {
         width: 100%;
         height: 60px;
-        padding: 0 42px 0 18px;
+        padding: 0 52px 0 18px;
         font-size: 1rem;
+    }
+
+    .btn-paste {
+        width: 48px;
+        height: 60px;
     }
 
     .btn-download {
@@ -1285,6 +1318,11 @@ a:hover {
         padding: 16px 20px 12px;
     }
 
+    .modal-close {
+        width: 44px;
+        height: 44px;
+    }
+
     .modal-body {
         padding: 16px 20px;
     }
@@ -1294,9 +1332,9 @@ a:hover {
     }
 
     #toast-container {
-        top: 12px;
-        right: 12px;
-        left: 12px;
+        top: max(12px, env(safe-area-inset-top, 0px));
+        right: max(12px, env(safe-area-inset-right, 0px));
+        left: max(12px, env(safe-area-inset-left, 0px));
     }
 
     .toast {
@@ -1351,10 +1389,14 @@ a:hover {
 }
 
 .status-progress-fill {
+    width: 100%;
     height: 100%;
     background: var(--accent-gradient);
     border-radius: 2px;
-    transition: width 0.4s ease;
+    transform-origin: left center;
+    transform: scaleX(var(--progress, 0));
+    transition: transform 0.4s ease;
+    will-change: transform;
 }
 
 /* Animated progress bar — pulsing glow while still processing */
@@ -1563,9 +1605,9 @@ a:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
-    height: 14px;
-    font-size: 0.6rem;
+    width: 16px;
+    height: 16px;
+    font-size: 0.7rem;
     font-weight: 700;
     color: var(--text-muted);
     background: rgba(255, 255, 255, 0.12);
@@ -1618,7 +1660,7 @@ a:hover {
     display: inline-block;
     width: fit-content;
     padding: 2px 10px;
-    font-size: 0.65rem;
+    font-size: 0.72rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -1981,7 +2023,7 @@ a:hover {
 /* Animated equalizer bars */
 .icon-eq .eq-bar {
     transform-origin: bottom;
-    animation: eqBounce 0.8s ease-in-out infinite alternate;
+    animation: eqScale 0.8s ease-in-out infinite alternate;
 }
 
 .icon-eq .eq-bar:nth-child(1) {
@@ -1996,7 +2038,7 @@ a:hover {
     animation-delay: 0.4s;
 }
 
-@keyframes eqBounce {
+@keyframes eqScale {
     0% {
         transform: scaleY(0.3);
     }
@@ -2156,14 +2198,14 @@ a:hover {
         right: 16px;
         transform: none;
         margin: 0;
-        width: 40px;
-        height: 40px;
-        background: rgba(255, 255, 255, 0.15);
-        backdrop-filter: blur(5px);
-        -webkit-backdrop-filter: blur(5px);
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        width: 44px;
+        height: 44px;
+        background: rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.25);
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-        color: #555555;
+        color: #fff;
     }
 
     .preview-download-btn:hover {
@@ -2211,14 +2253,14 @@ a:hover {
     align-items: center;
     justify-content: center;
     gap: 0;
-    height: 32px;
-    padding: 0 16px;
+    height: calc(32px + env(safe-area-inset-bottom, 0px));
+    padding: 0 16px env(safe-area-inset-bottom, 0px);
     background: rgba(26, 26, 30, 0.85);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-top: 1px solid var(--border);
     z-index: 100;
-    font-size: 0.7rem;
+    font-size: 0.72rem;
     font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
     user-select: none;
 }
@@ -2474,11 +2516,36 @@ a:hover {
 
 @media (max-width: 600px) {
     .system-stats-bar {
-        font-size: 0.6rem;
+        font-size: 0.7rem;
     }
 
     .stat-divider {
-        margin: 0 6px;
+        margin: 0 4px;
+    }
+}
+
+/* ── Touch and Coarse Pointer Adaptations ─────────────────────────────────── */
+@media (pointer: coarse), (hover: none) {
+    .preview-save-artwork-btn {
+        opacity: 0.95;
+        pointer-events: auto;
+        background: rgba(0, 0, 0, 0.6);
+        width: 44px;
+        height: 44px;
+    }
+
+    .preview-track-item.has-preview .preview-play-btn {
+        opacity: 0.85;
+        pointer-events: auto;
+    }
+
+    .preview-track-item.has-preview .preview-track-num {
+        opacity: 0;
+    }
+
+    .preview-track-checkbox {
+        min-width: 36px;
+        min-height: 36px;
     }
 }
 
@@ -2573,4 +2640,71 @@ a:hover {
 .status-drm-notice .btn-sub-trial-pill:hover {
     opacity: 0.9;
     transform: translateY(-1px);
+}
+
+/* ── Reduced Motion Accessibility ────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+    /* Title: Remove continuous specular shimmer; maintain static metallic luster */
+    .app-title {
+        animation: none !important;
+        background-position: 0% center !important;
+    }
+
+    /* Pulsating & continuous glow loops: Settle into stable, legible states */
+    .status-track-icon.active,
+    .status-active-detail {
+        animation: none !important;
+        opacity: 1 !important;
+    }
+
+    .status-progress-bar.processing .status-progress-fill {
+        animation: none !important;
+        box-shadow: 0 0 8px var(--accent-glow) !important;
+        opacity: 1 !important;
+    }
+
+    .status-progress-bar.processing::after {
+        display: none !important;
+    }
+
+    /* Equalizer & spin loops */
+    .icon-eq .eq-bar {
+        animation: none !important;
+        transform: scaleY(0.65) !important;
+    }
+
+    .btn-restart-wrapper .spin-icon {
+        animation: none !important;
+    }
+
+    /* Entrances: Replace spatial displacement (translateY/scale) with gentle opacity fades */
+    .modal,
+    .preview-section,
+    .toast,
+    .status-text {
+        animation: fadeIn 0.15s ease forwards !important;
+        transform: none !important;
+    }
+
+    .modal-overlay,
+    .modal-close,
+    .btn-download,
+    .btn-primary,
+    .btn-secondary,
+    .btn-auth,
+    .icon-btn,
+    .btn-paste {
+        transition-duration: 0.1s !important;
+    }
+
+    /* Button press: Maintain clear feedback via opacity without layout compression */
+    .btn-download:active,
+    .btn-primary:active,
+    .btn-secondary:active,
+    .btn-auth:active,
+    .icon-btn:active,
+    .btn-paste:active {
+        transform: none !important;
+        opacity: 0.82 !important;
+    }
 }

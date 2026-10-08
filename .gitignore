@@ -25,3 +25,8 @@ __pycache__
 !docs
 !firestore.rules
 !firebase.json
+!PRODUCT.md
+!DESIGN.md
+!.impeccable/
+.impeccable/live/
+.impeccable/config.local.json
