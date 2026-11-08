@@ -211,6 +211,7 @@ class AuthStorage {
             token: cleanToken,
             accountId,
             storefront: meta.storefront || null,
+            hasSubscription: typeof meta.hasSubscription === 'boolean' ? meta.hasSubscription : null,
             source: meta.source || 'file',
             savedAt: new Date().toISOString(),
         };

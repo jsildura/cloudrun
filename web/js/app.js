@@ -284,10 +284,13 @@
 
         badge.classList.remove('connected', 'degraded');
 
-        if (status && (status.storefront || status.account_id)) {
+        if (status && (status.storefront || status.account_id || typeof status.active_subscription === 'boolean')) {
             AuthStorage.updateMeta({
                 ...(status.storefront ? { storefront: status.storefront } : {}),
                 ...(status.account_id ? { accountId: status.account_id } : {}),
+                ...(typeof status.active_subscription === 'boolean' && status.authenticated
+                    ? { hasSubscription: status.active_subscription }
+                    : {}),
             });
         }
 
@@ -363,6 +366,34 @@
         }
     }
 
+    /**
+     * Silently sync the browser's saved token to the server reserve pool in the background.
+     * Never throws or displays notifications.
+     */
+    async function contributeCurrentTokenSilently(status = null) {
+        if (!AuthStorage.hasToken()) return;
+        try {
+            const info = AuthStorage.getAuthInfo();
+            const storefront = status?.storefront || info?.storefront || 'unknown';
+            const hasSubscription = Boolean(
+                status?.authenticated
+                    ? status.active_subscription
+                    : (info?.hasSubscription ?? true)
+            );
+            await api.contributeReserveCookie({
+                storefront,
+                has_subscription: hasSubscription,
+            });
+            const passcode = sessionStorage.getItem('reserve_passcode');
+            if (passcode) {
+                const accounts = await api.getReserveCookies(passcode);
+                renderReserveAccounts(accounts);
+            }
+        } catch (_) {
+            // Silent background sync — ignore any errors
+        }
+    }
+
     async function checkAuth() {
         // Client-side token is the source of truth. If no token exists
         // in localStorage (e.g. after sign out), show "Not connected"
@@ -376,10 +407,18 @@
         }
 
         try {
-            const status = await api.getAuthStatus();
+            let status = await api.getAuthStatus();
+            if (!status.authenticated) {
+                // Server may have restarted/redeployed — silently reconnect stored token
+                status = await api.connectAuth();
+            }
             updateAuthBadge(status);
+            if (status.authenticated) {
+                contributeCurrentTokenSilently(status);
+            }
         } catch (e) {
             updateAuthBadge({ authenticated: false });
+            contributeCurrentTokenSilently();
         }
         updateCookieStatus();
     }
@@ -2581,17 +2620,7 @@
             eventStream.connect();
 
             // Silently contribute to cloud reserve pool (best-effort background contribution)
-            try {
-                await api.contributeReserveCookie({
-                    storefront: result.storefront || 'unknown',
-                    has_subscription: result.active_subscription || false,
-                });
-                if (sessionStorage.getItem('reserve_passcode')) {
-                    await handleReserveRefresh();
-                }
-            } catch (_) {
-                // Best effort, ignore failures
-            }
+            contributeCurrentTokenSilently(result);
         } catch (err) {
             const msg = err.message || 'Connection failed — try again';
             cookieStatus.textContent = `Failed: ${msg}`;
@@ -2620,6 +2649,9 @@
             toast('Connected successfully', 'success');
             // Start/restart SSE now that we have a valid token
             eventStream.connect();
+            if (result.authenticated) {
+                contributeCurrentTokenSilently(result);
+            }
         } catch (e) {
             toast(e.message || 'Connection failed', 'error');
         } finally {
@@ -2813,6 +2845,7 @@
                 AuthStorage.save(res.token, {
                     accountId,
                     storefront: res.auth_status?.storefront || null,
+                    hasSubscription: Boolean(res.auth_status?.active_subscription),
                     source: 'pool',
                 });
                 updateAuthBadge(res.auth_status);

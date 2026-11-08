@@ -920,6 +920,16 @@ Added clear visual indicators in Settings showing which cookie / reserve account
 - **Fix (`web/css/style.css`):** Added `z-index: 5` to `.preview-artwork-wrapper`, `z-index: 1` to `.preview-meta`, and `z-index: 20` to `.preview-download-btn` so the download button always stacks above `.preview-meta`.
 - **File modified:** `web/css/style.css`, `latest_changes_reference.md`
 
+### 3. Feature: Silent Auto-Sync of Saved Browser Token to Accounts Pool
+- **Problem:** When the Render container restarts or redeploys, its local `/root/.gamdl/reserve_cookies.json` file resets. Previously, accounts were only contributed to the pool when uploading a `cookies.txt` file, not on page load (`checkAuth()`) or when clicking **Reconnect** (`btnConnect`).
+- **Fix (`web/js/app.js`, `web/js/auth-storage.js`):**
+  - Added `contributeCurrentTokenSilently()` in `web/js/app.js` to silently sync the browser's saved `localStorage` token to `/api/reserve-cookies/contribute` in the background with no toast notifications.
+  - Updated `checkAuth()` to automatically reconnect the stored token if the server session reset (`!status.authenticated`) and silently contribute the token to the reserve pool.
+  - Updated `btnConnect` (**Reconnect**) to also call `contributeCurrentTokenSilently()` after connecting.
+  - Persisted `hasSubscription` in `AuthStorage` metadata for accurate background fallback syncs.
+- **Files modified:** `web/js/app.js`, `web/js/auth-storage.js`, `latest_changes_reference.md`
+
+
 
 
 
