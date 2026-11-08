@@ -1064,6 +1064,12 @@ a:focus-visible {
     border-radius: var(--radius-sm);
     color: var(--text-primary);
     padding: 0 10px;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.reserve-account-select.is-active-account {
+    border-color: rgba(48, 209, 88, 0.45);
+    box-shadow: 0 0 0 1px rgba(48, 209, 88, 0.15);
 }
 
 .reserve-actions-row {
@@ -1079,6 +1085,17 @@ a:focus-visible {
     border: none;
     color: #fff;
     font-weight: 600;
+}
+
+.btn-reserve-connect.is-active-account {
+    background: rgba(48, 209, 88, 0.14);
+    border: 1px solid rgba(48, 209, 88, 0.35);
+    color: var(--success);
+}
+
+.btn-reserve-connect.is-active-account:hover:not(:disabled) {
+    background: rgba(48, 209, 88, 0.22);
+    box-shadow: 0 0 10px rgba(48, 209, 88, 0.2);
 }
 
 .btn-reserve-connect:hover:not(:disabled) {
@@ -1551,6 +1568,7 @@ a:focus-visible {
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
+    z-index: 5;
 }
 
 .preview-artwork-wrapper>* {
@@ -1578,6 +1596,8 @@ a:focus-visible {
     gap: 2px;
     padding-top: 4px;
     padding-right: 50px;
+    position: relative;
+    z-index: 1;
 }
 
 .preview-title {
@@ -1967,7 +1987,7 @@ a:focus-visible {
 
 /* Hover reveal for devices with pointer/mouse */
 @media (hover: hover) and (pointer: fine) {
-    .preview-artwork-wrapper:hover .preview-save-artwork-btn {
+    .preview-artwork-wrapper:hover:not(:has(.preview-download-btn:hover)) .preview-save-artwork-btn {
         opacity: 1;
         pointer-events: auto;
         transform: scale(1);
@@ -2009,6 +2029,7 @@ a:focus-visible {
     right: 20px;
     top: 50%;
     transform: translateY(-50%);
+    z-index: 20;
 }
 
 .preview-download-btn:hover {

@@ -15,6 +15,7 @@ class AuthStatus(BaseModel):
     active_subscription: bool = False
     account_restrictions: dict | None = None
     storefront: str | None = None
+    account_id: str | None = None
 
 
 # ── Download ──────────────────────────────────────────────────────────────────

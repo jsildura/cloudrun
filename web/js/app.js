@@ -80,6 +80,7 @@
     const reserveAccountSelect = $('#reserve-account-select');
     const btnReserveConnect = $('#btn-reserve-connect');
     const btnReserveDelete = $('#btn-reserve-delete');
+    let _cachedReserveAccounts = [];
 
     // Info modal
     const modalInfo = $('#modal-info');
@@ -283,19 +284,30 @@
 
         badge.classList.remove('connected', 'degraded');
 
+        if (status && (status.storefront || status.account_id)) {
+            AuthStorage.updateMeta({
+                ...(status.storefront ? { storefront: status.storefront } : {}),
+                ...(status.account_id ? { accountId: status.account_id } : {}),
+            });
+        }
+
+        const accId = (status && status.account_id) || AuthStorage.getAccountId();
+        const accSuffix = accId ? ` (${accId})` : '';
+
         if (status.authenticated && status.active_subscription) {
             const r = status.account_restrictions;
             const explicitBlocked = r && r.explicit && r.explicit.allowed === false;
+            const sf = (status.storefront || 'Unknown').toUpperCase();
             if (explicitBlocked) {
                 badge.classList.add('degraded');
-                tooltip.textContent = `Connected \u00b7 ${status.storefront || 'Unknown'} (restricted)`;
+                tooltip.textContent = `Connected \u00b7 ${sf}${accSuffix} (restricted)`;
             } else {
                 badge.classList.add('connected');
-                tooltip.textContent = `Connected \u00b7 ${status.storefront || 'Unknown'}`;
+                tooltip.textContent = `Connected \u00b7 ${sf}${accSuffix}`;
             }
         } else if (status.authenticated) {
             badge.classList.add('degraded');
-            tooltip.textContent = 'No active subscription';
+            tooltip.textContent = `No active subscription${accSuffix}`;
         } else {
             tooltip.textContent = 'Not connected';
         }
@@ -306,19 +318,37 @@
         }
     }
 
-    function updateCookieStatus() {
+    function updateCookieStatus(_skipReserveSync = false) {
         if (!cookieStatus) return;
         if (AuthStorage.hasToken()) {
             const info = AuthStorage.getAuthInfo();
+            const accId = AuthStorage.getAccountId();
+            const sf = (info?.storefront || '').toUpperCase();
+            const isPool = info?.source === 'pool' || (
+                accId && _cachedReserveAccounts.some((a) => a.id === accId)
+            );
             const savedAt = info?.savedAt
                 ? new Date(info.savedAt).toLocaleString()
                 : 'unknown';
-            cookieStatus.textContent = `Token saved (${savedAt})`;
+            cookieStatus.textContent = accId
+                ? `Active cookie: ${accId} (${savedAt})`
+                : `Token saved (${savedAt})`;
             cookieStatus.classList.add('success');
+
             // Update status card
             if (authStatusCard) authStatusCard.classList.add('connected');
-            if (authStatusLabel) authStatusLabel.textContent = 'Connected';
-            if (authStatusDetail) authStatusDetail.textContent = `Token saved ${savedAt}`;
+            if (authStatusLabel) {
+                authStatusLabel.textContent = 'Connected';
+            }
+            if (authStatusDetail) {
+                if (accId && isPool) {
+                    authStatusDetail.textContent = `Using Accounts Pool (${accId}) \u00b7 Saved ${savedAt}`;
+                } else if (accId) {
+                    authStatusDetail.textContent = `Cookie ID: ${accId} \u00b7 Saved ${savedAt}`;
+                } else {
+                    authStatusDetail.textContent = `Token saved ${savedAt}`;
+                }
+            }
         } else {
             cookieStatus.textContent = '';
             cookieStatus.classList.remove('success');
@@ -326,6 +356,10 @@
             if (authStatusCard) authStatusCard.classList.remove('connected');
             if (authStatusLabel) authStatusLabel.textContent = 'Not Connected';
             if (authStatusDetail) authStatusDetail.textContent = 'Upload cookies.txt to connect';
+        }
+
+        if (!_skipReserveSync && _cachedReserveAccounts.length > 0 && reserveViewUnlocked && reserveViewUnlocked.style.display !== 'none') {
+            renderReserveAccounts(_cachedReserveAccounts);
         }
     }
 
@@ -2529,7 +2563,7 @@
             }
 
             // Save token to localStorage
-            AuthStorage.save(token);
+            AuthStorage.save(token, { source: 'file' });
 
             // Validate token against the server (retry once on failure)
             let result;
@@ -2552,6 +2586,9 @@
                     storefront: result.storefront || 'unknown',
                     has_subscription: result.active_subscription || false,
                 });
+                if (sessionStorage.getItem('reserve_passcode')) {
+                    await handleReserveRefresh();
+                }
             } catch (_) {
                 // Best effort, ignore failures
             }
@@ -2618,29 +2655,78 @@
         return flags[c] || '🌐';
     }
 
-    function renderReserveAccounts(accounts) {
+    function updateReserveSelectionState() {
         if (!reserveAccountSelect) return;
+        const selectedId = reserveAccountSelect.value;
+        const activeAccountId = AuthStorage.hasToken() ? AuthStorage.getAccountId() : null;
+        const isCurrent = Boolean(selectedId && activeAccountId && selectedId === activeAccountId);
+
+        reserveAccountSelect.classList.toggle('is-active-account', isCurrent);
+
+        if (btnReserveDelete) {
+            btnReserveDelete.disabled = !selectedId;
+        }
+
+        if (!btnReserveConnect) return;
+        btnReserveConnect.disabled = !selectedId;
+        btnReserveConnect.classList.toggle('is-active-account', isCurrent);
+
+        if (isCurrent) {
+            btnReserveConnect.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Connected (${escapeHtml(selectedId)})`;
+        } else {
+            btnReserveConnect.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Connect Account`;
+        }
+    }
+
+    function renderReserveAccounts(accounts) {
+        _cachedReserveAccounts = Array.isArray(accounts) ? accounts : [];
+        if (!reserveAccountSelect) return;
+
+        const prevSelected = reserveAccountSelect.value;
+        const activeAccountId = AuthStorage.hasToken() ? AuthStorage.getAccountId() : null;
+
         reserveAccountSelect.innerHTML = '<option value="" disabled selected>Select an account...</option>';
-        if (!accounts || accounts.length === 0) {
+        if (_cachedReserveAccounts.length === 0) {
             if (reservePoolCount) reservePoolCount.textContent = '0 accounts available';
-            if (btnReserveConnect) btnReserveConnect.disabled = true;
-            if (btnReserveDelete) btnReserveDelete.disabled = true;
+            updateReserveSelectionState();
             return;
         }
         if (reservePoolCount) {
-            reservePoolCount.textContent = `${accounts.length} account${accounts.length > 1 ? 's' : ''} available`;
+            reservePoolCount.textContent = `${_cachedReserveAccounts.length} account${_cachedReserveAccounts.length > 1 ? 's' : ''} available`;
         }
-        accounts.forEach((acc) => {
+
+        let matchedActiveAcc = null;
+        _cachedReserveAccounts.forEach((acc) => {
             const opt = document.createElement('option');
             opt.value = acc.id;
             const flag = storefrontToFlag(acc.storefront);
             const subBadge = acc.has_subscription ? '✓ Active Sub' : 'No Sub';
             const sfName = (acc.storefront || 'unknown').toUpperCase();
-            opt.textContent = `${flag} ${sfName} (${acc.id}) • ${subBadge}`;
+            const isCurrent = Boolean(activeAccountId && acc.id === activeAccountId);
+            if (isCurrent) {
+                matchedActiveAcc = acc;
+            }
+            opt.textContent = `${flag} ${sfName} (${acc.id}) • ${subBadge}${isCurrent ? ' • In Use' : ''}`;
             reserveAccountSelect.appendChild(opt);
         });
-        if (btnReserveConnect) btnReserveConnect.disabled = true;
-        if (btnReserveDelete) btnReserveDelete.disabled = true;
+
+        if (matchedActiveAcc) {
+            // Ensure stored auth metadata knows storefront if missing
+            const info = AuthStorage.getAuthInfo();
+            if (info && !info.storefront && matchedActiveAcc.storefront) {
+                AuthStorage.updateMeta({ storefront: matchedActiveAcc.storefront });
+            }
+            updateCookieStatus(true);
+        }
+
+        // Pre-select the active account by default (or preserve user's dropdown selection if still valid)
+        if (matchedActiveAcc) {
+            reserveAccountSelect.value = matchedActiveAcc.id;
+        } else if (prevSelected && _cachedReserveAccounts.some((a) => a.id === prevSelected)) {
+            reserveAccountSelect.value = prevSelected;
+        }
+
+        updateReserveSelectionState();
     }
 
     function setReserveUnlockedState(unlocked, accounts = []) {
@@ -2718,24 +2804,26 @@
         const passcode = sessionStorage.getItem('reserve_passcode');
         if (!accountId || !passcode) return;
 
-        const originalHTML = btnReserveConnect.innerHTML;
         btnReserveConnect.disabled = true;
         btnReserveConnect.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Connecting…`;
 
         try {
             const res = await api.connectReserveCookie(accountId, passcode);
             if (res && res.token) {
-                AuthStorage.save(res.token);
+                AuthStorage.save(res.token, {
+                    accountId,
+                    storefront: res.auth_status?.storefront || null,
+                    source: 'pool',
+                });
                 updateAuthBadge(res.auth_status);
                 updateCookieStatus();
                 eventStream.connect();
-                toast('Connected to reserve account successfully', 'success');
+                toast(`Connected to reserve account (${accountId})`, 'success');
             }
         } catch (err) {
             toast(err.message || 'Failed to connect reserve account', 'error');
         } finally {
-            btnReserveConnect.innerHTML = originalHTML;
-            btnReserveConnect.disabled = false;
+            updateReserveSelectionState();
         }
     }
 
@@ -2787,9 +2875,7 @@
     }
     if (reserveAccountSelect) {
         reserveAccountSelect.addEventListener('change', () => {
-            const hasVal = Boolean(reserveAccountSelect.value);
-            if (btnReserveConnect) btnReserveConnect.disabled = !hasVal;
-            if (btnReserveDelete) btnReserveDelete.disabled = !hasVal;
+            updateReserveSelectionState();
         });
     }
 

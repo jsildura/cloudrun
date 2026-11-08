@@ -896,4 +896,30 @@ Migrated backend Docker infrastructure following the cancellation of the AWS EC2
   - Updated `web/js/app.js` to dynamically hide the `SWAP` element and divider when `swap_total_mb <= 0`, cleanly removing `SWAP: 0/0 MB`.
 - **Files modified:** `server/api_routes.py`, `web/js/app.js`, `web/index.html`, `latest_changes_reference.md`
 
+---
+
+## Changes Made (November 8, 2026)
+
+### 1. Feature: Active Account ID Indicator in Authentication Card & Accounts Pool
+Added clear visual indicators in Settings showing which cookie / reserve account ID (e.g. `e56b880b`) is currently active.
+- **Client-Side Account ID Computation (`web/js/auth-storage.js`):**
+  - Added synchronous SHA-256 hashing (`AuthStorage.computeAccountId()`) matching `hashlib.sha256(token.strip().encode()).hexdigest()[:8]` on the backend, so `AuthStorage.getAccountId()` immediately resolves the 8-character ID even for pre-existing `localStorage` tokens.
+  - Extended `AuthStorage.save()` and `AuthStorage.updateMeta()` to store `accountId`, `storefront`, and `source` (`'pool'` vs `'file'`).
+- **Backend Auth Status (`server/models.py`, `server/api_routes.py`):**
+  - Added `account_id: str | None = None` to `AuthStatus` returned by `/api/auth/status`, `/api/auth/connect`, and `/api/reserve-cookies/connect/{account_id}`.
+- **Authentication Status Card (`web/js/app.js`, `web/css/style.css`):**
+  - Updates detail subtitle (`#auth-status-detail`) to show `Using Accounts Pool (e56b880b) · Saved ...` or `Cookie ID: e56b880b · Saved ...`.
+  - Appends `(e56b880b)` to the top-left `#auth-badge` hover tooltip.
+- **Accounts Pool Highlighting & Pre-Selection (`web/js/app.js`, `web/css/style.css`):**
+  - Pre-selects the currently active account in `#reserve-account-select` and appends `• In Use` to its option label.
+  - Highlights the dropdown and updates `#btn-reserve-connect` to `✓ Connected (e56b880b)` when the active account is selected, switching back to `Connect Account` when another account is chosen.
+- **Files modified:** `web/js/auth-storage.js`, `web/js/app.js`, `web/css/style.css`, `server/models.py`, `server/api_routes.py`, `latest_changes_reference.md`
+
+### 2. Fix: Preview Download Button Unclickable on Desktop
+- **Root cause:** `.preview-download-btn` is a child of `.preview-artwork-wrapper` (first flex child of `.preview-header`) positioned at `right: 20px; top: 50%;`. When the skeleton reveal animation (`animation: fadeIn ... forwards`) was applied to both `.preview-artwork-wrapper` and `.preview-meta` (second flex child with `padding-right: 50px`), both created CSS stacking contexts. Because `.preview-meta` appeared later in the DOM, its `padding-right: 50px` area stacked on top of `.preview-artwork-wrapper` and intercepted all mouse clicks over `.preview-download-btn`.
+- **Fix (`web/css/style.css`):** Added `z-index: 5` to `.preview-artwork-wrapper`, `z-index: 1` to `.preview-meta`, and `z-index: 20` to `.preview-download-btn` so the download button always stacks above `.preview-meta`.
+- **File modified:** `web/css/style.css`, `latest_changes_reference.md`
+
+
+
 

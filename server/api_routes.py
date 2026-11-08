@@ -201,11 +201,13 @@ async def auth_status(request: Request) -> AuthStatus:
     _check_rate_limit(request)
     token = _extract_token(request)
     dm = _get_user_dm(token)
+    acc_id = hashlib.sha256(token.strip().encode()).hexdigest()[:8]
     return AuthStatus(
         authenticated=dm.is_authenticated,
         active_subscription=dm.has_subscription,
         account_restrictions=dm.has_restrictions,
         storefront=dm.storefront,
+        account_id=acc_id,
     )
 
 
@@ -220,6 +222,7 @@ async def connect_auth(request: Request) -> AuthStatus:
     token = _extract_token(request)
     dm = _get_user_dm(token)
     cfg = _get_current_config()
+    acc_id = hashlib.sha256(token.strip().encode()).hexdigest()[:8]
 
     # If already authenticated, just return current status
     if dm.is_authenticated:
@@ -228,6 +231,7 @@ async def connect_auth(request: Request) -> AuthStatus:
             active_subscription=dm.has_subscription,
             account_restrictions=dm.has_restrictions,
             storefront=dm.storefront,
+            account_id=acc_id,
         )
 
     try:
@@ -237,6 +241,7 @@ async def connect_auth(request: Request) -> AuthStatus:
             active_subscription=result["active_subscription"],
             account_restrictions=result["account_restrictions"],
             storefront=result["storefront"],
+            account_id=acc_id,
         )
     except Exception as e:
         logger.error("connect_auth error: %s", e)
@@ -1266,6 +1271,7 @@ async def connect_reserve_cookie(
                 active_subscription=dm.has_subscription,
                 account_restrictions=dm.has_restrictions,
                 storefront=dm.storefront,
+                account_id=account_id,
             )
         else:
             result = await dm.authenticate_from_token(token, cfg.language)
@@ -1274,6 +1280,7 @@ async def connect_reserve_cookie(
                 active_subscription=result["active_subscription"],
                 account_restrictions=result["account_restrictions"],
                 storefront=result["storefront"],
+                account_id=account_id,
             )
 
         reserve_manager.update_account_status(
